@@ -27,6 +27,12 @@ parking_lot = { workspace = true }
 bitflags = { workspace = true }
 tracing = { workspace = true, optional = true }
 
+[dev-dependencies]
+# Not used in code — declared so Cargo builds the mock cdylib before the tests
+# that dlopen it. See autoitx-sys for the same pattern.
+xtask-mock-dll = { path = "../xtask-mock-dll" }
+libloading = { workspace = true }
+
 [lints]
 workspace = true
 

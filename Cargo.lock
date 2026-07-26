@@ -8,9 +8,11 @@ version = "0.1.0"
 dependencies = [
  "autoitx-sys",
  "bitflags",
+ "libloading",
  "parking_lot",
  "thiserror",
  "tracing",
+ "xtask-mock-dll",
 ]
 
 [[package]]

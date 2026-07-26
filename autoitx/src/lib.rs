@@ -52,9 +52,27 @@
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![doc(html_root_url = "https://docs.rs/autoitx/0.1.0")]
 
-pub mod geometry;
+mod backend;
 
+pub mod error;
+pub mod geometry;
+pub mod keys;
+pub mod options;
+pub mod selector;
+
+#[cfg(any(windows, feature = "mock-loader", docsrs))]
+#[cfg_attr(docsrs, doc(cfg(any(windows, feature = "mock-loader"))))]
+pub mod autoit;
+
+#[cfg(any(windows, feature = "mock-loader", docsrs))]
+#[cfg_attr(docsrs, doc(cfg(any(windows, feature = "mock-loader"))))]
+pub use autoit::{AutoIt, AutoItBuilder, MouseButton, Session};
+
+pub use error::{Error, Result};
 pub use geometry::{PixelCoordSpace, Point, Rect, Size};
+pub use keys::Keys;
+pub use options::{Options, ShowState, Speed, TitleMatchMode, WinState};
+pub use selector::Selector;
 
 /// Platform-specific capabilities.
 ///
@@ -242,5 +260,6 @@ pub mod ext {
 /// with whatever primitive is right there. This is what keeps `#[cfg]` out of
 /// business logic even though the underlying capabilities differ.
 ///
-/// Populated in phase 2 — see the project plan.
-pub mod recipes {}
+#[cfg(any(windows, feature = "mock-loader", docsrs))]
+#[cfg_attr(docsrs, doc(cfg(any(windows, feature = "mock-loader"))))]
+pub mod recipes;

@@ -27,8 +27,31 @@ use std::sync::Mutex;
 static CALLS: Mutex<Vec<String>> = Mutex::new(Vec::new());
 /// What the next output-string function should write back.
 static NEXT_STRING: Mutex<Option<Vec<u16>>> = Mutex::new(None);
-/// What the next integer-returning function should return.
+/// What integer-returning functions should return once the queue is empty.
 static NEXT_INT: Mutex<i32> = Mutex::new(0);
+/// Scripted return values, consumed in order.
+///
+/// Needed to exercise sequences where the answer changes between calls — an
+/// escalating close, for instance, where the window exists, ignores the close
+/// request, and only goes away after the process is killed. A single fixed
+/// value cannot express that.
+static RETURN_QUEUE: Mutex<std::collections::VecDeque<i32>> =
+    Mutex::new(std::collections::VecDeque::new());
+/// What `AU3_error` reports. Kept separate from the queue on purpose — see
+/// [`Ret`].
+static NEXT_ERROR: Mutex<i32> = Mutex::new(0);
+
+/// The next scripted integer: the queue if it has one, else the fixed value.
+///
+/// Written without a `let` chain: those need Rust 1.88, and this workspace's
+/// MSRV is 1.85.
+fn next_int() -> i32 {
+    let queued = RETURN_QUEUE.lock().ok().and_then(|mut q| q.pop_front());
+    match queued {
+        Some(v) => v,
+        None => NEXT_INT.lock().map(|g| *g).unwrap_or(0),
+    }
+}
 
 fn record(call: String) {
     if let Ok(mut g) = CALLS.lock() {
@@ -152,24 +175,35 @@ fn finish(name: &str, args: &[ArgVal]) -> String {
 // ---------------------------------------------------------------------------
 
 /// Supplies a value for each return type the ABI uses.
+///
+/// Takes the function name because one function must not behave like the
+/// others: `AU3_error` is a status read that the safe layer performs after
+/// *every* call. If it drew from the scripted queue like an operation does, it
+/// would consume half the script and shift every subsequent answer onto the
+/// wrong call.
 trait Ret {
-    fn mock() -> Self;
+    fn mock(name: &str) -> Self;
 }
 
 impl Ret for i32 {
-    fn mock() -> Self {
-        NEXT_INT.lock().map(|g| *g).unwrap_or(0)
+    fn mock(name: &str) -> Self {
+        if name == "AU3_error" {
+            return NEXT_ERROR.lock().map(|g| *g).unwrap_or(0);
+        }
+        next_int()
     }
 }
 
 impl Ret for DWORD {
-    fn mock() -> Self {
-        NEXT_INT.lock().map(|g| *g as Self).unwrap_or(0)
+    fn mock(name: &str) -> Self {
+        let _ = name;
+        next_int() as Self
     }
 }
 
 impl Ret for HWND {
-    fn mock() -> Self {
+    fn mock(name: &str) -> Self {
+        let _ = name;
         std::ptr::null_mut()
     }
 }
@@ -224,7 +258,7 @@ macro_rules! mock_impl {
                     &[$(Arg::capture(&$arg)),*],
                 ));
 
-                $(<$ret as Ret>::mock())?
+                $(<$ret as Ret>::mock(stringify!($name)))?
             }
         )+
     };
@@ -251,6 +285,24 @@ pub unsafe extern "system" fn MOCK_reset() {
     }
     if let Ok(mut g) = NEXT_INT.lock() {
         *g = 0;
+    }
+    if let Ok(mut q) = RETURN_QUEUE.lock() {
+        q.clear();
+    }
+    if let Ok(mut g) = NEXT_ERROR.lock() {
+        *g = 0;
+    }
+}
+
+/// Scripts what `AU3_error` reports after the next call.
+///
+/// # Safety
+///
+/// Called across FFI; takes a plain integer.
+#[unsafe(no_mangle)]
+pub unsafe extern "system" fn MOCK_set_next_error(v: i32) {
+    if let Ok(mut g) = NEXT_ERROR.lock() {
+        *g = v;
     }
 }
 
@@ -316,7 +368,7 @@ pub unsafe extern "system" fn MOCK_set_next_string(s: PCWSTR) {
     }
 }
 
-/// Scripts what the next integer-returning function returns.
+/// Scripts what integer-returning functions return once the queue is empty.
 ///
 /// # Safety
 ///
@@ -325,5 +377,19 @@ pub unsafe extern "system" fn MOCK_set_next_string(s: PCWSTR) {
 pub unsafe extern "system" fn MOCK_set_next_int(v: i32) {
     if let Ok(mut g) = NEXT_INT.lock() {
         *g = v;
+    }
+}
+
+/// Queues one integer return value, consumed before the fixed one.
+///
+/// Call repeatedly to script a sequence of differing answers.
+///
+/// # Safety
+///
+/// Called across FFI; takes a plain integer.
+#[unsafe(no_mangle)]
+pub unsafe extern "system" fn MOCK_push_int(v: i32) {
+    if let Ok(mut q) = RETURN_QUEUE.lock() {
+        q.push_back(v);
     }
 }
