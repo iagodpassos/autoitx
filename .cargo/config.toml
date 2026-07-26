@@ -1,0 +1,15 @@
+# Cross-compiling to Windows from macOS.
+#
+# `cargo check` and `cargo clippy` need NONE of this — they never invoke the
+# linker, and this workspace contains no C code and no import libraries (the
+# AutoItX DLL is loaded at runtime via `libloading`). That is the inner loop:
+#
+#     cargo check --target x86_64-pc-windows-gnu --all-features
+#
+# The settings below are only needed to produce and run an actual .exe.
+# They require `brew install mingw-w64` (linker) and `brew install wine` (runner).
+
+[target.x86_64-pc-windows-gnu]
+linker = "x86_64-w64-mingw32-gcc"
+ar = "x86_64-w64-mingw32-ar"
+runner = "wine"

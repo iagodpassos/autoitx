@@ -1,0 +1,12 @@
+/target
+**/*.rs.bk
+*.pdb
+
+# Never commit the AutoItX DLL — it is not ours to redistribute. See NOTICE.
+*.dll
+!xtask-mock-dll/**/*.dll
+
+.DS_Store
+.idea/
+.vscode/*
+!.vscode/settings.json

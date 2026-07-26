@@ -1,0 +1,36 @@
+[workspace]
+resolver = "3"
+members = ["autoitx-sys", "autoitx", "xtask-mock-dll"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/iagodpassos/autoitx"
+authors = ["Iago Passos <iago.dpassos@gmail.com>"]
+keywords = ["automation", "autoit", "gui", "rpa", "windows"]
+categories = ["api-bindings", "os"]
+
+[workspace.dependencies]
+autoitx-sys = { version = "0.1.0", path = "autoitx-sys" }
+
+# `libloading` 0.9 raises the MSRV to 1.88; 0.8.x stays compatible with ours.
+libloading = "0.8.9"
+thiserror = "2.0"
+parking_lot = "0.12"
+bitflags = "2.9"
+tracing = "0.1"
+
+# Windows-only
+widestring = "1.2"
+
+[workspace.lints.rust]
+missing_docs = "deny"
+unsafe_op_in_unsafe_fn = "deny"
+
+[workspace.lints.clippy]
+undocumented_unsafe_blocks = "warn"
+
+[profile.release]
+lto = "thin"

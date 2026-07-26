@@ -1,0 +1,37 @@
+[package]
+name = "autoitx"
+description = "Cross-platform desktop UI automation with AutoItX's API — AutoItX3 DLL on Windows, native Accessibility/CGEvent on macOS"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+keywords.workspace = true
+categories.workspace = true
+readme = "../README.md"
+
+[features]
+default = []
+# Per-call `tracing` spans: a timestamped log of every keystroke and click.
+tracing = ["dep:tracing"]
+# In-memory backend for testing automation code without a desktop.
+mock = []
+# Forward to autoitx-sys so the mock DLL can be loaded from any OS.
+mock-loader = ["autoitx-sys/mock-loader"]
+
+[dependencies]
+autoitx-sys = { workspace = true }
+thiserror = { workspace = true }
+parking_lot = { workspace = true }
+bitflags = { workspace = true }
+tracing = { workspace = true, optional = true }
+
+[lints]
+workspace = true
+
+[package.metadata.docs.rs]
+default-target = "x86_64-pc-windows-msvc"
+targets = ["x86_64-pc-windows-msvc", "aarch64-apple-darwin"]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]

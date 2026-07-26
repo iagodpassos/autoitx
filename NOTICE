@@ -1,0 +1,31 @@
+autoitx
+Copyright 2026 Iago Passos
+
+This product includes software developed by Iago Passos, licensed under
+either of MIT or Apache License 2.0, at your option.
+
+================================================================================
+Regarding AutoIt and AutoItX
+================================================================================
+
+AutoIt and AutoItX are products of AutoIt Consulting Ltd.
+
+This project is NOT affiliated with, endorsed by, or sponsored by AutoIt
+Consulting Ltd. The name "autoitx" is used descriptively, to identify the API
+this library is compatible with.
+
+The AutoItX3 DLL is NOT distributed with this crate, is NOT a dependency in the
+Cargo sense, and no part of it is vendored into this source tree.
+
+On Windows, this library loads `AutoItX3_x64.dll` at runtime from a location you
+provide. You must obtain that DLL yourself, from the official AutoIt
+distribution at https://www.autoitscript.com/, and your use of it is governed by
+AutoIt's own licence terms — not by this project's licence. AutoIt is freeware
+distributed under a EULA; note in particular that commercial use requires
+acknowledging AutoIt in your product and linking to the AutoIt homepage.
+
+See docs/windows-setup.md for how to obtain and locate the DLL.
+
+The macOS backend contains no AutoIt code and requires no AutoIt component. It
+is an independent implementation, using Apple's Accessibility, Core Graphics,
+and AppKit frameworks, of an API surface modeled on AutoItX's.

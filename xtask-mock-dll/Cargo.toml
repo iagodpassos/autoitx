@@ -1,0 +1,18 @@
+[package]
+name = "xtask-mock-dll"
+description = "A stand-in for AutoItX3.dll that records calls, so the Windows FFI layer can be tested from any OS"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[lib]
+# `cdylib` so this builds as a .dylib on macOS and a .dll on Windows. The
+# loader in autoitx-sys is OS-agnostic; only the default DLL *search paths* are
+# Windows-specific. That is what lets `cargo test` exercise all 117 AU3
+# signatures on a Mac, with no Windows and no licensed DLL in sight.
+crate-type = ["cdylib"]
+
+[lints]
+workspace = true
