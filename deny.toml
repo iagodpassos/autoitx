@@ -30,6 +30,11 @@ confidence-threshold = 0.9
 [bans]
 multiple-versions = "warn"
 wildcards = "deny"
+# A versionless `path` dependency inside this workspace is not the supply-chain
+# hazard `wildcards` exists to catch — it resolves to a sibling crate in this
+# repository, never to whatever the registry happens to hold. Used for the
+# mock-DLL dev-dependency.
+allow-wildcard-paths = true
 
 [sources]
 unknown-registry = "deny"

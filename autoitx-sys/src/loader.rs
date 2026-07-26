@@ -48,8 +48,11 @@ pub fn search_paths(explicit: Option<&Path>) -> Vec<PathBuf> {
     if let Some(d) = std::env::var_os("AUTOITX_DIR") {
         out.push(PathBuf::from(d).join(name));
     }
-    if let Ok(exe) = std::env::current_exe()
-        && let Some(dir) = exe.parent()
+    // Written without a `let` chain on purpose: those only stabilised in Rust
+    // 1.88, and this crate's MSRV is 1.85.
+    if let Some(dir) = std::env::current_exe()
+        .ok()
+        .and_then(|exe| exe.parent().map(Path::to_path_buf))
     {
         out.push(dir.join(name));
     }

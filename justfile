@@ -6,15 +6,27 @@
 # dependency. A Windows VM is needed only to observe real behaviour.
 
 WIN := "x86_64-pc-windows-gnu"
+MSRV := "1.85.0"
 
 default:
     @just --list
 
 # The pre-push gate: everything that can be proven without a Windows machine.
-check-all: fmt-check
-    cargo clippy --all-targets --all-features -- -D warnings
-    cargo clippy --target {{WIN}} --all-features -- -D warnings
-    cargo test --all-features
+#
+# Runs clippy with no features as well as all: the platform and mock-loader
+# gates mean code can be dead in one configuration and live in another, and
+# `-D warnings` in CI turns that into a failure.
+check-all: fmt-check msrv
+    cargo clippy --workspace --all-targets -- -D warnings
+    cargo clippy --workspace --all-targets --all-features -- -D warnings
+    cargo clippy --target {{WIN}} -p autoitx-sys -p autoitx --all-features -- -D warnings
+    cargo test --workspace --all-features
+
+# Language features are not gated by `rust-version`, so only a real 1.85
+# toolchain catches an accidental use of something newer (let chains, say).
+#   rustup toolchain install {{MSRV}} --profile minimal
+msrv:
+    cargo +{{MSRV}} check --workspace --all-features
 
 fmt:
     cargo fmt --all
