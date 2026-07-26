@@ -45,9 +45,56 @@
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![doc(html_root_url = "https://docs.rs/autoitx-sys/0.1.0")]
 
+// Declares `au3_functions!`, which `api` consumes. Must come first: macros are
+// only visible to modules declared after their definition.
+#[macro_use]
+pub mod functions;
+
+pub mod api;
+pub mod error;
+pub mod loader;
 pub mod types;
 
-pub use types::{AU3_INTDEFAULT, HWND, POINT, RECT};
+pub use api::Au3;
+pub use error::LoadError;
+pub use types::{AU3_INTDEFAULT, DWORD, HWND, PCWSTR, POINT, PWSTR, RECT};
+
+impl Au3 {
+    /// Finds and loads the AutoItX3 DLL, then calls `AU3_Init`.
+    ///
+    /// Pass `explicit` to name the file directly; otherwise the search order in
+    /// [`loader::search_paths`] applies. An explicit path never falls back —
+    /// silently loading a different AutoIt build than the one requested is how
+    /// unreproducible bugs are made.
+    ///
+    /// # Errors
+    ///
+    /// [`LoadError::UnsupportedTarget`] on a platform that cannot host the DLL,
+    /// [`LoadError::NotFound`] if no candidate exists (the message lists every
+    /// path tried), [`LoadError::Open`] if the file is not loadable — usually a
+    /// bitness mismatch — or [`LoadError::MissingSymbol`] if it loads but is
+    /// not an AutoItX3 DLL.
+    ///
+    /// # Safety
+    ///
+    /// Loading a shared library runs its initialisation code. The file found
+    /// must genuinely be an AutoItX3 DLL (or an ABI-compatible stand-in such as
+    /// this project's test mock); binding these signatures to something else
+    /// that happens to export the same names is undefined behaviour.
+    ///
+    /// # Availability
+    ///
+    /// Off Windows this requires the `mock-loader` feature — see
+    /// [`Au3::load_from`].
+    #[cfg(any(windows, feature = "mock-loader", docsrs))]
+    #[cfg_attr(docsrs, doc(cfg(any(windows, feature = "mock-loader"))))]
+    pub unsafe fn load(explicit: Option<&std::path::Path>) -> Result<Self, LoadError> {
+        loader::check_target()?;
+        let path = loader::locate(explicit)?;
+        // SAFETY: delegated to this function's own contract.
+        unsafe { Self::load_from(&path) }
+    }
+}
 
 /// The DLL file name AutoIt ships for 64-bit processes.
 pub const DLL_NAME_X64: &str = "AutoItX3_x64.dll";

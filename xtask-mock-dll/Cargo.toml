@@ -12,7 +12,16 @@ publish = false
 # loader in autoitx-sys is OS-agnostic; only the default DLL *search paths* are
 # Windows-specific. That is what lets `cargo test` exercise all 117 AU3
 # signatures on a Mac, with no Windows and no licensed DLL in sight.
-crate-type = ["cdylib"]
+# `cdylib` is what gets loaded; `rlib` exists so `autoitx-sys` can name this
+# crate as a dev-dependency, which is what makes Cargo build the cdylib before
+# running the tests that load it. (A dev-dependency cycle is legal — only the
+# normal dependency graph has to be acyclic.)
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+# For the AU3 types and, crucially, the `au3_functions!` list: the mock is
+# generated from the same declarations as the real bindings, so it cannot drift.
+autoitx-sys = { workspace = true }
 
 [lints]
 workspace = true

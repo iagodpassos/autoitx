@@ -9,6 +9,18 @@
 
 use core::ffi::c_void;
 
+/// A borrowed, NUL-terminated UTF-16 string. Win32's `LPCWSTR`.
+pub type PCWSTR = *const u16;
+
+/// A caller-allocated UTF-16 output buffer. Win32's `LPWSTR`.
+///
+/// Always paired with an `i32` capacity counted in wide characters
+/// **including the terminating NUL**.
+pub type PWSTR = *mut u16;
+
+/// Win32's `DWORD`.
+pub type DWORD = u32;
+
 /// An opaque window handle. `HWND` on Windows.
 ///
 /// Kept as a raw pointer to match the C ABI exactly. The safe `autoitx` crate

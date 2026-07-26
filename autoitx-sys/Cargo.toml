@@ -19,9 +19,17 @@ mock-loader = []
 
 [dependencies]
 libloading = { workspace = true }
+thiserror = { workspace = true }
 
 [target.'cfg(windows)'.dependencies]
 widestring = { workspace = true }
+
+[dev-dependencies]
+# Not used in code — declared so Cargo builds the mock cdylib before running
+# the tests that dlopen it. Without this, a clean `cargo test` fails on a
+# missing artifact. The dependency cycle is fine: dev-dependencies may be
+# cyclic, only the normal graph must not be.
+xtask-mock-dll = { path = "../xtask-mock-dll" }
 
 [lints]
 workspace = true
