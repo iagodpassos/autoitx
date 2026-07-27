@@ -224,7 +224,7 @@ fn maximize_uses_the_sw_maximize_value() {
 #[test]
 fn close_if_exists_does_nothing_when_no_window_matches() {
     let h = Harness::new();
-    // Mock returns 0 from WinExists.
+    // Mock returns a null handle from WinGetHandle: nothing matched.
     let closed =
         h.ai.win_close_if_exists(&Selector::active(), Duration::from_secs(60))
             .unwrap();
@@ -232,37 +232,40 @@ fn close_if_exists_does_nothing_when_no_window_matches() {
     assert!(!closed);
     assert_eq!(
         h.call_names(),
-        ["AU3_WinExists"],
-        "only the existence check"
+        ["AU3_WinGetHandle"],
+        "only the identity lookup"
     );
 }
 
 #[test]
-fn close_if_exists_escalates_to_killing_the_process() {
+fn close_if_exists_pins_the_window_by_handle_before_escalating() {
+    // Regression, found on a real desktop.
+    //
+    // The whole sequence must target the one window the caller meant, not
+    // "whatever matches now". With `[ACTIVE]` the difference is stark: the app
+    // pops a save dialog, which becomes active; the process is killed, and some
+    // other application becomes active. A wait for `[ACTIVE]` to vanish never
+    // finishes — there is always an active window — so a successful close is
+    // reported as a timeout.
     let h = Harness::new();
-
-    // Script the awkward case, which is the only one worth testing: the window
-    // exists, ignores the close request, and only goes away once its process is
-    // killed.
     h.script_ints(&[
-        1,    // WinExists      -> yes
-        1,    // WinClose       -> accepted
-        0,    // WinWaitClose   -> still there after the grace period
-        4242, // WinGetProcess
-        1,    // ProcessClose   -> killed
-        1,    // WinWaitClose   -> gone
+        0x4_0B1E, // WinGetHandle -> pin this window
+        1,        // WinClose     -> accepted
+        0,        // WinWaitClose -> still there
+        4242,     // WinGetProcess
+        1,        // ProcessClose
+        1,        // WinWaitClose -> gone
     ]);
 
-    let sel = Selector::from("[CLASS:Chrome_WidgetWin_1]");
     let closed =
-        h.ai.win_close_if_exists(&sel, Duration::from_millis(50))
+        h.ai.win_close_if_exists(&Selector::active(), Duration::from_millis(50))
             .unwrap();
 
     assert!(closed);
     assert_eq!(
         h.call_names(),
         [
-            "AU3_WinExists",
+            "AU3_WinGetHandle",
             "AU3_WinClose",
             "AU3_WinWaitClose",
             "AU3_WinGetProcess",
@@ -271,7 +274,29 @@ fn close_if_exists_escalates_to_killing_the_process() {
         ],
         "escalation order changed"
     );
-    // The pid from WinGetProcess must be what gets killed.
+
+    // Every window operation after the lookup must address the handle, never
+    // `[ACTIVE]`. `ProcessClose` is exempt: it takes a process id.
+    for call in h.calls().iter().skip(1) {
+        if call.starts_with("AU3_ProcessClose") {
+            continue;
+        }
+        assert!(
+            call.contains("[HANDLE:40b1e]"),
+            "call still uses an unstable selector: {call}"
+        );
+    }
+    // `[ACTIVE]` appears exactly once — in the lookup that resolves it. That is
+    // the point of the whole design: name the unstable thing one time, then
+    // stop.
+    assert_eq!(
+        h.calls().iter().filter(|c| c.contains("ACTIVE")).count(),
+        1,
+        "[ACTIVE] should be resolved once and never used again:\n{}",
+        h.log()
+    );
+    assert!(h.calls()[0].contains("[ACTIVE]"), "{}", h.calls()[0]);
+
     assert!(
         h.calls()[4].contains("4242"),
         "killed the wrong process: {:?}",
@@ -282,7 +307,7 @@ fn close_if_exists_escalates_to_killing_the_process() {
 #[test]
 fn close_if_exists_stops_early_when_the_window_closes_politely() {
     let h = Harness::new();
-    h.script_ints(&[1, 1, 1]); // exists, close accepted, gone
+    h.script_ints(&[0x4_0B1E, 1, 1]); // handle, close accepted, gone
 
     let closed =
         h.ai.win_close_if_exists(&Selector::active(), Duration::from_secs(1))
@@ -291,7 +316,7 @@ fn close_if_exists_stops_early_when_the_window_closes_politely() {
     assert!(closed);
     assert_eq!(
         h.call_names(),
-        ["AU3_WinExists", "AU3_WinClose", "AU3_WinWaitClose"],
+        ["AU3_WinGetHandle", "AU3_WinClose", "AU3_WinWaitClose"],
         "should not have escalated"
     );
 }
@@ -301,7 +326,7 @@ fn close_if_exists_reports_a_process_that_will_not_die() {
     let h = Harness::new();
     // Never closes, even after the kill. The .NET version waits forever here;
     // an unkillable process is something to report, not to hang on.
-    h.script_ints(&[1, 1, 0, 4242, 1, 0]);
+    h.script_ints(&[0x4_0B1E, 1, 0, 4242, 1, 0]);
 
     let err =
         h.ai.win_close_if_exists(&Selector::active(), Duration::from_millis(50))
@@ -315,6 +340,16 @@ fn close_if_exists_reports_a_process_that_will_not_die() {
                 ..
             }
         ),
+        "{err:?}"
+    );
+}
+
+#[test]
+fn win_get_handle_reports_a_missing_window() {
+    let h = Harness::new(); // mock returns a null handle
+    let err = h.ai.win_get_handle(&Selector::active()).unwrap_err();
+    assert!(
+        matches!(err, autoitx::Error::WindowNotFound { .. }),
         "{err:?}"
     );
 }

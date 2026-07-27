@@ -422,6 +422,21 @@ impl Inner {
         })
     }
 
+    /// Resolves a selector to the handle of the window it currently matches.
+    ///
+    /// The point is to freeze an identity. `[ACTIVE]` and a title prefix both
+    /// name "whatever matches right now", which is fine for a single call and
+    /// wrong for a sequence — by the second call, the answer may be a different
+    /// window.
+    pub(crate) fn win_get_handle(&self, s: &Selector) -> Result<u64> {
+        let w = self.sel(s)?;
+        let (h, _) = au3!(self, AU3_WinGetHandle(w.as_ptr(), EMPTY_WIDE.as_ptr()));
+        if h.is_null() {
+            return Err(Error::window_not_found(s));
+        }
+        Ok(h as usize as u64)
+    }
+
     pub(crate) fn win_get_text(&self, s: &Selector) -> Result<String> {
         let w = self.sel(s)?;
         self.call_str("AU3_WinGetText", LARGE_BUF, |buf, cap| {

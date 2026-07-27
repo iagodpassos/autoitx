@@ -307,34 +307,71 @@ impl AutoIt {
         self.inner.win_get_class_list(s)
     }
 
+    /// Resolves a selector to the handle of the window it matches right now.
+    ///
+    /// Useful for pinning an identity before a sequence of operations: a title
+    /// prefix or `[ACTIVE]` names "whatever matches at this instant", and the
+    /// answer can change between two calls.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::WindowNotFound`] if nothing matches.
+    pub fn win_get_handle(&self, s: &Selector) -> Result<u64> {
+        self.inner.win_get_handle(s)
+    }
+
     /// Closes a window if it exists, escalating to killing the process.
     ///
-    /// The sequence, which mirrors what production AutoIt automation does by
-    /// hand: ask it to close; wait; if it is still there, terminate the owning
-    /// process; wait again.
+    /// Asks it to close; waits; if it is still there, terminates the owning
+    /// process; waits again. Returns `false` if no window matched to begin
+    /// with.
     ///
-    /// Returns `false` if no window matched in the first place.
+    /// # The selector is pinned first
+    ///
+    /// Before doing anything, the selector is resolved to a window handle, and
+    /// the rest of the sequence targets that handle. This matters more than it
+    /// looks:
+    ///
+    /// `[ACTIVE]` and bare-title selectors mean "whatever matches right now".
+    /// Over a close-and-wait sequence that is actively wrong — the application
+    /// pops a "save changes?" dialog, which becomes the active window; kill the
+    /// process and some *other* application becomes active. A wait for
+    /// `[ACTIVE]` to disappear then never finishes, because there is always an
+    /// active window somewhere. The close succeeded and the caller is told it
+    /// timed out.
+    ///
+    /// Pinning the handle up front makes the whole sequence refer to the one
+    /// window the caller meant.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::Timeout`] if the window outlives its own process being
+    /// terminated — bounded on purpose, where hand-written automation typically
+    /// waits forever.
     pub fn win_close_if_exists(&self, s: &Selector, grace: Duration) -> Result<bool> {
         let _session = self.session();
 
-        if !self.win_exists(s)? {
+        // Pin the identity. A failure here means nothing matched, which is the
+        // same answer as `win_exists` returning false.
+        let Ok(handle) = self.win_get_handle(s) else {
             return Ok(false);
-        }
+        };
+        let target = Selector::handle(handle);
 
-        self.win_close(s)?;
-        if self.win_wait_close(s, Some(grace))? {
+        self.win_close(&target)?;
+        if self.win_wait_close(&target, Some(grace))? {
             return Ok(true);
         }
 
         // It ignored the close request. Ask the OS.
-        let pid = self.win_get_process(s)?;
+        let pid = self.win_get_process(&target)?;
         if pid != 0 {
             self.inner.process_close(&pid.to_string())?;
         }
 
         // Bounded, unlike the .NET code's unbounded final wait: a process that
-        // survives SIGKILL-equivalent is a problem to report, not to hang on.
-        if !self.win_wait_close(s, Some(grace))? {
+        // survives being terminated is a problem to report, not to hang on.
+        if !self.win_wait_close(&target, Some(grace))? {
             return Err(Error::Timeout {
                 operation: "win_close_if_exists",
                 waited: grace * 2,

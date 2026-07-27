@@ -204,7 +204,10 @@ impl Ret for DWORD {
 impl Ret for HWND {
     fn mock(name: &str) -> Self {
         let _ = name;
-        std::ptr::null_mut()
+        // Drawn from the same scripted queue as the integers, so a test can
+        // hand out a handle: `script_ints(&[0x1234])`. A 0 stays null, which is
+        // how AutoItX says "no window".
+        next_int() as usize as Self
     }
 }
 
