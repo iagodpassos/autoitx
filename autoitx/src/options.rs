@@ -113,6 +113,54 @@ bitflags::bitflags! {
     }
 }
 
+/// How Windows modifier names translate on macOS.
+///
+/// `{CTRLDOWN}c{CTRLUP}` means Copy on Windows and **Control-C** on macOS,
+/// where Copy is Command-C. There is no reading of that sequence that is right
+/// on both platforms, so this makes the choice explicit rather than guessing.
+///
+/// ```
+/// # use autoitx::options::{KeyMap, Options};
+/// // The default: CTRL means Control. A shortcut written for Windows will
+/// // not do what it did there, and will do so loudly.
+/// assert_eq!(Options::default().key_map, KeyMap::AsWritten);
+/// ```
+///
+/// # Which to choose
+///
+/// If your `{CTRLDOWN}...{CTRLUP}` sequences are all editing shortcuts — copy,
+/// paste, select-all, save — [`PortableShortcuts`](Self::PortableShortcuts) is
+/// what you want, and it is a one-line change.
+///
+/// If any of them mean Control literally — a terminal's Ctrl-C, an
+/// application's own Control binding — leave the default and translate those
+/// call sites deliberately. Silent remapping would turn "interrupt this
+/// process" into "copy", which is not a bug anyone enjoys finding.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+#[non_exhaustive]
+pub enum KeyMap {
+    /// Names mean what they say: `CTRL` is Control, `ALT` is Option, `LWIN` is
+    /// Command.
+    ///
+    /// The default, because a shortcut that quietly does something else is
+    /// worse than one that plainly does nothing.
+    #[default]
+    AsWritten,
+
+    /// Translates Windows shortcut *intent* to the macOS equivalent.
+    ///
+    /// | written | `AsWritten` | `PortableShortcuts` |
+    /// |---|---|---|
+    /// | `CTRL` | Control | **Command** |
+    /// | `ALT` | Option | Option |
+    /// | `LWIN` / `RWIN` | Command | **Control** |
+    ///
+    /// `CTRL` and the Windows key swap places, which is what makes
+    /// `{CTRLDOWN}c{CTRLUP}` copy and `{LWINDOWN}...` reach the Control-key
+    /// bindings it would have reached on Windows.
+    PortableShortcuts,
+}
+
 /// Mouse movement speed, 0 (instant) to 100 (slowest).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Speed(u8);
@@ -181,6 +229,8 @@ pub struct Options {
     pub mouse_click_drag_delay: Duration,
     /// Polling interval for the window-wait functions.
     pub win_wait_delay: Duration,
+    /// How Windows modifier names are interpreted. Only affects macOS.
+    pub key_map: KeyMap,
 }
 
 impl Default for Options {
@@ -202,6 +252,7 @@ impl Default for Options {
             mouse_click_down_delay: Duration::from_millis(10),
             mouse_click_drag_delay: Duration::from_millis(250),
             win_wait_delay: Duration::from_millis(250),
+            key_map: KeyMap::AsWritten,
         }
     }
 }

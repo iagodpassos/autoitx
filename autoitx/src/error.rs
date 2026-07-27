@@ -118,6 +118,19 @@ pub enum Error {
         hint: String,
     },
 
+    /// A key sequence names a key this platform does not have.
+    ///
+    /// `{PRINTSCREEN}` on macOS, for instance. Reported rather than skipped:
+    /// pressing nothing and returning success would leave the automation
+    /// believing it took a screenshot.
+    #[error("this platform ({platform}) has no {key} key")]
+    UnsupportedKey {
+        /// The key name, as written.
+        key: String,
+        /// Which platform lacks it.
+        platform: &'static str,
+    },
+
     /// An underlying I/O failure, e.g. launching a program.
     #[error(transparent)]
     Io(#[from] std::io::Error),

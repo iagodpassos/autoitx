@@ -79,7 +79,7 @@ pub use control::Control;
 pub use error::{Error, Result};
 pub use geometry::{PixelCoordSpace, Point, Rect, Size};
 pub use keys::Keys;
-pub use options::{Options, ShowState, Speed, TitleMatchMode, WinState};
+pub use options::{KeyMap, Options, ShowState, Speed, TitleMatchMode, WinState};
 pub use selector::Selector;
 
 /// Platform-specific capabilities.

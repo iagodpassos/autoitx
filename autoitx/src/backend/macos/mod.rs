@@ -20,4 +20,6 @@
 //!   operations therefore take an explicit coordinate space.
 
 pub(crate) mod clipboard;
+pub(crate) mod input;
+pub(crate) mod keycodes;
 pub(crate) mod permissions;
