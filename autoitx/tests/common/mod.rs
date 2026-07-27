@@ -53,6 +53,7 @@ pub struct Harness {
     set_next_string: unsafe extern "system" fn(*const u16),
     set_next_int: unsafe extern "system" fn(i32),
     push_int: unsafe extern "system" fn(i32),
+    set_next_error: unsafe extern "system" fn(i32),
 }
 
 impl Harness {
@@ -68,13 +69,14 @@ impl Harness {
         // SAFETY: these symbols are declared in xtask-mock-dll with exactly
         // these signatures; `lib` is moved into the same struct as the
         // resulting pointers, so it outlives them.
-        let (reset, take_log, set_next_string, set_next_int, push_int) = unsafe {
+        let (reset, take_log, set_next_string, set_next_int, push_int, set_next_error) = unsafe {
             (
                 *lib.get(b"MOCK_reset\0").expect("MOCK_reset"),
                 *lib.get(b"MOCK_take_log\0").expect("MOCK_take_log"),
                 *lib.get(b"MOCK_set_next_string\0").expect("set_next_string"),
                 *lib.get(b"MOCK_set_next_int\0").expect("set_next_int"),
                 *lib.get(b"MOCK_push_int\0").expect("push_int"),
+                *lib.get(b"MOCK_set_next_error\0").expect("set_next_error"),
             )
         };
 
@@ -100,6 +102,7 @@ impl Harness {
             set_next_string,
             set_next_int,
             push_int,
+            set_next_error,
         }
     }
 
@@ -160,5 +163,14 @@ impl Harness {
             // SAFETY: a plain integer, resolved from the loaded mock.
             unsafe { (self.push_int)(*v) };
         }
+    }
+
+    /// Scripts what `AU3_error` reports after each call.
+    ///
+    /// AutoIt's real error channel, and the one that matters for the functions
+    /// that fill an out-parameter rather than returning a status.
+    pub fn script_error(&self, code: i32) {
+        // SAFETY: a plain integer, resolved from the loaded mock.
+        unsafe { (self.set_next_error)(code) };
     }
 }

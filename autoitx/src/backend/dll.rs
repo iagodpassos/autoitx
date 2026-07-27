@@ -219,14 +219,19 @@ impl Inner {
     ) -> Result<()> {
         let b = wide(button, "mouse button")?;
         let spd = speed.map_or(AU3_INTDEFAULT, Speed::get);
-        let (ok, _) = au3!(
+        // Unlike `WinGetPos`, `MouseClick` *is* documented as returning 1 on
+        // success and 0 on failure — and only when the button name is not one
+        // AutoIt knows. So the return is the right signal here, but the error
+        // reported carries the flag too, so a surprise is diagnosable from one
+        // failure rather than two.
+        let (ok, code) = au3!(
             self,
             AU3_MouseClick(b.as_ptr(), p.x, p.y, clicks as i32, spd)
         );
         if ok == 0 {
             return Err(Error::AutoItFailed {
                 func: "AU3_MouseClick",
-                code: ok,
+                code,
             });
         }
         Ok(())
@@ -301,11 +306,24 @@ impl Inner {
     pub(crate) fn win_get_pos(&self, s: &Selector) -> Result<Rect> {
         let w = self.sel(s)?;
         let mut rect = RECT::default();
-        let (ok, _) = au3!(
+        // The error flag, not the integer return, is what says whether the
+        // window was found.
+        //
+        // AutoIt documents `WinGetPos` as reporting failure through @error; its
+        // DLL form fills the RECT and leaves the `int` return unspecified. An
+        // earlier version of this treated a 0 return as "not found", and it
+        // rejected windows that plainly existed — `win_get_title` would answer
+        // for the very same selector a line earlier.
+        //
+        // The rule for this ABI: functions that fill an out-parameter report
+        // through the error flag; only the ones documented as returning 1/0
+        // (`WinExists`, `MouseClick`, the `WinWait*` family) have a meaningful
+        // return.
+        let (_, code) = au3!(
             self,
             AU3_WinGetPos(w.as_ptr(), EMPTY_WIDE.as_ptr(), &raw mut rect)
         );
-        if ok == 0 {
+        if code != 0 {
             return Err(Error::window_not_found(s));
         }
         Ok(Rect::from(rect))

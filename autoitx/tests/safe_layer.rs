@@ -382,12 +382,35 @@ fn click_in_window_fails_loudly_when_the_window_is_gone() {
     // Clicking at a stale coordinate because the window vanished is how
     // automation ends up pressing whatever is underneath.
     let h = Harness::new();
+    h.script_error(1); // AutoIt sets @error = 1 when no window matches
     let err = recipes::click_in_window(&h.ai, &Selector::active(), 10, 10).unwrap_err();
     assert!(
         matches!(err, autoitx::Error::WindowNotFound { .. }),
         "{err:?}"
     );
     assert_eq!(h.call_names(), ["AU3_WinGetPos"], "must not have clicked");
+}
+
+#[test]
+fn win_get_pos_trusts_the_error_flag_not_the_integer_return() {
+    // Regression, found on a real desktop.
+    //
+    // `WinGetPos` fills a RECT and reports failure through @error; its integer
+    // return is unspecified. Treating a 0 return as "not found" rejected
+    // windows that plainly existed — `win_get_title` answered for the very same
+    // selector one line earlier.
+    let h = Harness::new();
+
+    // The mock returns 0 from every call and leaves @error clear: exactly the
+    // shape that used to break — found, but returning 0.
+    let rect =
+        h.ai.win_get_pos(&Selector::active())
+            .expect("a clear error flag means the window was found");
+    assert_eq!(rect, autoitx::Rect::new(0, 0, 0, 0));
+
+    // With the flag set, it is a genuine miss.
+    h.script_error(1);
+    assert!(h.ai.win_get_pos(&Selector::active()).is_err());
 }
 
 #[test]
