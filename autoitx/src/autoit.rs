@@ -325,6 +325,46 @@ impl AutoIt {
     pub(crate) fn inner(&self) -> &Inner {
         &self.inner
     }
+
+    /// The raw `AU3_*` function table.
+    ///
+    /// An escape hatch for the parts of AutoItX this crate has not wrapped, and
+    /// for finding out what the DLL actually does — the documentation on
+    /// autoitscript.com describes AutoIt's *script* functions, and the DLL
+    /// variants do not always agree. `WinGetPos` is the cautionary tale: the
+    /// script form returns an array, the DLL form fills a `RECT` and leaves its
+    /// integer return unspecified.
+    ///
+    /// # Locking
+    ///
+    /// This does **not** take the lock. Hold a [`Session`] for as long as you
+    /// use the returned table, or you will race with other threads — AutoItX is
+    /// not reentrant, and its error flag belongs to whichever call ran last.
+    ///
+    /// ```no_run
+    /// # use autoitx::AutoIt;
+    /// # let ai = AutoIt::new()?;
+    /// let s = ai.session();          // hold the lock
+    /// let au3 = s.raw();
+    /// // SAFETY: the signature matches the declaration, and the session
+    /// // guarantees no other thread is calling into AutoItX.
+    /// let found = unsafe { (au3.AU3_WinMinimizeAll)() };
+    /// # Ok::<(), autoitx::Error>(())
+    /// ```
+    #[must_use]
+    pub fn raw(&self) -> &autoitx_sys::Au3 {
+        self.inner.raw()
+    }
+
+    /// AutoIt's error flag, as left by the most recent call **on this thread**.
+    ///
+    /// Only meaningful immediately after a [`raw`](Self::raw) call, under the
+    /// same [`Session`]. The wrapped methods read it themselves and it is
+    /// overwritten by every call, including theirs.
+    #[must_use]
+    pub fn raw_error(&self) -> i32 {
+        self.inner.raw_error()
+    }
 }
 
 /// Which mouse button to click.

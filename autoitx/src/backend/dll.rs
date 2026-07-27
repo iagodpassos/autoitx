@@ -130,6 +130,17 @@ impl Inner {
         self.lock.lock()
     }
 
+    /// The raw function table. See [`AutoIt::raw`](crate::AutoIt::raw).
+    pub(crate) const fn raw(&self) -> &Au3 {
+        &self.au3
+    }
+
+    /// Reads AutoIt's error flag without making a call.
+    pub(crate) fn raw_error(&self) -> i32 {
+        let (code, _) = au3!(self, AU3_error());
+        code
+    }
+
     /// Runs a string-returning call, growing the buffer until it fits.
     ///
     /// AutoItX gives no "required size" signal, so a result that fills the
