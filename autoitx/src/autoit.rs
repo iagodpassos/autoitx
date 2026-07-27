@@ -3,7 +3,7 @@
 use crate::backend::dll::Inner;
 use crate::error::{Error, Result};
 use crate::options::{Options, ShowState, Speed, WinState};
-use crate::{Keys, Point, Rect, Selector};
+use crate::{Keys, Point, Rect, Selector, Size};
 use parking_lot::ReentrantMutexGuard;
 use std::ops::Deref;
 use std::path::PathBuf;
@@ -166,6 +166,47 @@ impl AutoIt {
         speed: Option<Speed>,
     ) -> Result<()> {
         self.inner.mouse_click(button.as_str(), p, clicks, speed)
+    }
+
+    /// Where the cursor is.
+    pub fn mouse_get_pos(&self) -> Result<Point> {
+        self.inner.mouse_get_pos()
+    }
+
+    /// Moves the cursor without clicking.
+    pub fn mouse_move(&self, p: Point, speed: Option<Speed>) -> Result<()> {
+        self.inner.mouse_move(p, speed)
+    }
+
+    /// Presses a mouse button and leaves it down.
+    ///
+    /// Pair with [`mouse_up`](Self::mouse_up). A button left down survives the
+    /// end of your program and is confusing to whoever is at the machine, so
+    /// prefer [`mouse_click_drag`](Self::mouse_click_drag) where it fits.
+    pub fn mouse_down(&self, button: MouseButton) -> Result<()> {
+        self.inner.mouse_down(button.as_str())
+    }
+
+    /// Releases a mouse button.
+    pub fn mouse_up(&self, button: MouseButton) -> Result<()> {
+        self.inner.mouse_up(button.as_str())
+    }
+
+    /// Scrolls the wheel. `direction` is `"up"` or `"down"`.
+    pub fn mouse_wheel(&self, direction: &str, clicks: u32) -> Result<()> {
+        self.inner.mouse_wheel(direction, clicks)
+    }
+
+    /// Drags from one point to another.
+    pub fn mouse_click_drag(
+        &self,
+        button: MouseButton,
+        from: Point,
+        to: Point,
+        speed: Option<Speed>,
+    ) -> Result<()> {
+        self.inner
+            .mouse_click_drag(button.as_str(), from, to, speed)
     }
 
     // -- Windows -----------------------------------------------------------
@@ -408,6 +449,86 @@ impl AutoIt {
         Ok(self.process_id(name)?.is_some())
     }
 
+    /// Waits for a process to start. `false` on timeout.
+    pub fn process_wait(&self, name: &str, timeout: Option<Duration>) -> Result<bool> {
+        self.inner.process_wait(name, timeout)
+    }
+
+    /// Waits for a process to end. `false` on timeout.
+    pub fn process_wait_close(&self, name: &str, timeout: Option<Duration>) -> Result<bool> {
+        self.inner.process_wait_close(name, timeout)
+    }
+
+    /// Runs a program and waits for it, returning its exit code.
+    pub fn run_wait(&self, command: &str, working_dir: Option<&str>) -> Result<i32> {
+        self.inner.run_wait(command, working_dir)
+    }
+
+    /// Whether this process is running elevated.
+    #[must_use]
+    pub fn is_admin(&self) -> bool {
+        self.inner.is_admin()
+    }
+
+    // -- More windows ------------------------------------------------------
+
+    /// Moves and resizes a window. Returns whether it was found.
+    pub fn win_move(&self, s: &Selector, r: Rect) -> Result<bool> {
+        self.inner.win_move(s, r)
+    }
+
+    /// Changes a window's title. Returns whether it was found.
+    pub fn win_set_title(&self, s: &Selector, title: &str) -> Result<bool> {
+        self.inner.win_set_title(s, title)
+    }
+
+    /// Pins a window above the others, or unpins it.
+    pub fn win_set_on_top(&self, s: &Selector, on_top: bool) -> Result<bool> {
+        self.inner.win_set_on_top(s, on_top)
+    }
+
+    /// Forcibly closes a window.
+    ///
+    /// Unlike [`win_close`](Self::win_close), this does not let the application
+    /// object — no "save changes?" prompt, and no chance to save. Prefer
+    /// [`win_close_if_exists`](Self::win_close_if_exists), which asks nicely
+    /// first and escalates only if it has to.
+    pub fn win_kill(&self, s: &Selector) -> Result<bool> {
+        self.inner.win_kill(s)
+    }
+
+    /// Waits for a window to stop being focused. `false` on timeout.
+    pub fn win_wait_not_active(&self, s: &Selector, timeout: Option<Duration>) -> Result<bool> {
+        self.inner.win_wait_not_active(s, timeout)
+    }
+
+    /// The window's client area, excluding borders and title bar.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::WindowNotFound`] if nothing matches.
+    pub fn win_get_client_size(&self, s: &Selector) -> Result<Size> {
+        self.inner.win_get_client_size(s)
+    }
+
+    /// Minimises every window, as Win+D does.
+    pub fn win_minimize_all(&self) -> Result<()> {
+        self.inner.win_minimize_all(false)
+    }
+
+    /// Undoes [`win_minimize_all`](Self::win_minimize_all).
+    pub fn win_minimize_all_undo(&self) -> Result<()> {
+        self.inner.win_minimize_all(true)
+    }
+
+    /// Shows a tooltip at a screen position, or at the cursor.
+    ///
+    /// An empty string dismisses it. Handy for showing what a long-running
+    /// robot is doing without stealing focus.
+    pub fn tool_tip(&self, text: &str, at: Option<Point>) -> Result<()> {
+        self.inner.tool_tip(text, at)
+    }
+
     /// The colour of one screen pixel, as `0xRRGGBB`.
     ///
     /// # No failure signal
@@ -492,6 +613,19 @@ impl AutoIt {
     #[must_use]
     pub fn raw(&self) -> &autoitx_sys::Au3 {
         self.inner.raw()
+    }
+
+    /// The shape of the system mouse cursor.
+    ///
+    /// Windows-only: macOS has no public API for the system-wide cursor shape.
+    /// Prefer [`recipes::wait_until_idle`](crate::recipes::wait_until_idle),
+    /// which expresses the intent portably.
+    #[cfg(any(windows, docsrs))]
+    #[cfg_attr(docsrs, doc(cfg(windows)))]
+    pub fn mouse_get_cursor(&self) -> Result<crate::ext::windows::MouseCursor> {
+        Ok(crate::ext::windows::MouseCursor::from_code(
+            self.inner.mouse_get_cursor()?,
+        ))
     }
 
     /// AutoIt's error flag, as left by the most recent call **on this thread**.

@@ -17,8 +17,8 @@
 
 use crate::error::{Error, Result};
 use crate::options::{Options, ShowState, Speed, WinState};
-use crate::{Keys, Point, Rect, Selector};
-use autoitx_sys::{AU3_INTDEFAULT, Au3, RECT};
+use crate::{Keys, Point, Rect, Selector, Size};
+use autoitx_sys::{AU3_INTDEFAULT, Au3, POINT, RECT};
 use parking_lot::{ReentrantMutex, ReentrantMutexGuard};
 use std::path::Path;
 use std::time::Duration;
@@ -510,6 +510,162 @@ impl Inner {
     pub(crate) fn mouse_get_cursor(&self) -> Result<i32> {
         let (code, _) = au3!(self, AU3_MouseGetCursor());
         Ok(code)
+    }
+
+    pub(crate) fn mouse_get_pos(&self) -> Result<Point> {
+        let mut p = POINT::default();
+        au3!(self, AU3_MouseGetPos(&raw mut p));
+        Ok(Point::new(p.x, p.y))
+    }
+
+    pub(crate) fn mouse_move(&self, p: Point, speed: Option<Speed>) -> Result<()> {
+        let spd = speed.map_or(AU3_INTDEFAULT, Speed::get);
+        au3!(self, AU3_MouseMove(p.x, p.y, spd));
+        Ok(())
+    }
+
+    pub(crate) fn mouse_down(&self, button: &str) -> Result<()> {
+        let b = wide(button, "mouse button")?;
+        au3!(self, AU3_MouseDown(b.as_ptr()));
+        Ok(())
+    }
+
+    pub(crate) fn mouse_up(&self, button: &str) -> Result<()> {
+        let b = wide(button, "mouse button")?;
+        au3!(self, AU3_MouseUp(b.as_ptr()));
+        Ok(())
+    }
+
+    pub(crate) fn mouse_wheel(&self, direction: &str, clicks: u32) -> Result<()> {
+        let d = wide(direction, "wheel direction")?;
+        au3!(self, AU3_MouseWheel(d.as_ptr(), clicks as i32));
+        Ok(())
+    }
+
+    pub(crate) fn mouse_click_drag(
+        &self,
+        button: &str,
+        from: Point,
+        to: Point,
+        speed: Option<Speed>,
+    ) -> Result<()> {
+        let b = wide(button, "mouse button")?;
+        let spd = speed.map_or(AU3_INTDEFAULT, Speed::get);
+        let (ok, code) = au3!(
+            self,
+            AU3_MouseClickDrag(b.as_ptr(), from.x, from.y, to.x, to.y, spd)
+        );
+        if ok == 0 {
+            return Err(Error::AutoItFailed {
+                func: "AU3_MouseClickDrag",
+                code,
+            });
+        }
+        Ok(())
+    }
+
+    pub(crate) fn win_move(&self, s: &Selector, r: Rect) -> Result<bool> {
+        let w = self.sel(s)?;
+        let (ok, _) = au3!(
+            self,
+            AU3_WinMove(w.as_ptr(), EMPTY_WIDE.as_ptr(), r.x, r.y, r.w, r.h)
+        );
+        Ok(ok != 0)
+    }
+
+    pub(crate) fn win_set_title(&self, s: &Selector, title: &str) -> Result<bool> {
+        let w = self.sel(s)?;
+        let t = wide(title, "new title")?;
+        let (ok, _) = au3!(
+            self,
+            AU3_WinSetTitle(w.as_ptr(), EMPTY_WIDE.as_ptr(), t.as_ptr())
+        );
+        Ok(ok != 0)
+    }
+
+    pub(crate) fn win_set_on_top(&self, s: &Selector, on_top: bool) -> Result<bool> {
+        let w = self.sel(s)?;
+        let (ok, _) = au3!(
+            self,
+            AU3_WinSetOnTop(w.as_ptr(), EMPTY_WIDE.as_ptr(), i32::from(on_top))
+        );
+        Ok(ok != 0)
+    }
+
+    pub(crate) fn win_kill(&self, s: &Selector) -> Result<bool> {
+        let w = self.sel(s)?;
+        let (ok, _) = au3!(self, AU3_WinKill(w.as_ptr(), EMPTY_WIDE.as_ptr()));
+        Ok(ok != 0)
+    }
+
+    pub(crate) fn win_wait_not_active(&self, s: &Selector, t: Option<Duration>) -> Result<bool> {
+        let w = self.sel(s)?;
+        let (ok, _) = au3!(
+            self,
+            AU3_WinWaitNotActive(w.as_ptr(), EMPTY_WIDE.as_ptr(), timeout_secs(t))
+        );
+        Ok(ok != 0)
+    }
+
+    pub(crate) fn win_get_client_size(&self, s: &Selector) -> Result<Size> {
+        let w = self.sel(s)?;
+        let mut rect = RECT::default();
+        // Same shape as WinGetPos, so the same rule: the error flag decides.
+        let (_, code) = au3!(
+            self,
+            AU3_WinGetClientSize(w.as_ptr(), EMPTY_WIDE.as_ptr(), &raw mut rect)
+        );
+        if code != 0 {
+            return Err(Error::window_not_found(s));
+        }
+        let r = Rect::from(rect);
+        Ok(Size::new(r.w, r.h))
+    }
+
+    pub(crate) fn win_minimize_all(&self, undo: bool) -> Result<()> {
+        if undo {
+            au3!(self, AU3_WinMinimizeAllUndo());
+        } else {
+            au3!(self, AU3_WinMinimizeAll());
+        }
+        Ok(())
+    }
+
+    pub(crate) fn process_wait(&self, name: &str, t: Option<Duration>) -> Result<bool> {
+        let w = wide(name, "process name")?;
+        let (ok, _) = au3!(self, AU3_ProcessWait(w.as_ptr(), timeout_secs(t)));
+        Ok(ok != 0)
+    }
+
+    pub(crate) fn process_wait_close(&self, name: &str, t: Option<Duration>) -> Result<bool> {
+        let w = wide(name, "process name")?;
+        let (ok, _) = au3!(self, AU3_ProcessWaitClose(w.as_ptr(), timeout_secs(t)));
+        Ok(ok != 0)
+    }
+
+    pub(crate) fn run_wait(&self, command: &str, working_dir: Option<&str>) -> Result<i32> {
+        let cmd = wide(command, "command")?;
+        let dir = match working_dir {
+            Some(d) => wide(d, "working directory")?,
+            None => vec![0u16],
+        };
+        let (exit, _) = au3!(
+            self,
+            AU3_RunWait(cmd.as_ptr(), dir.as_ptr(), AU3_INTDEFAULT)
+        );
+        Ok(exit)
+    }
+
+    pub(crate) fn is_admin(&self) -> bool {
+        let (yes, _) = au3!(self, AU3_IsAdmin());
+        yes != 0
+    }
+
+    pub(crate) fn tool_tip(&self, text: &str, at: Option<Point>) -> Result<()> {
+        let t = wide(text, "tooltip text")?;
+        let (x, y) = at.map_or((AU3_INTDEFAULT, AU3_INTDEFAULT), |p| (p.x, p.y));
+        au3!(self, AU3_ToolTip(t.as_ptr(), x, y));
+        Ok(())
     }
 
     pub(crate) fn sleep(&self, d: Duration) {
