@@ -128,6 +128,24 @@ impl AutoIt {
         self.inner.clip_put(s)
     }
 
+    /// The system clipboard's sequence number.
+    ///
+    /// Windows increments this on every clipboard write, by any process, so it
+    /// answers "did the clipboard change?" without reading or writing the
+    /// contents. Comparing contents cannot do that reliably: a sentinel can
+    /// collide with the real value, and a write that restores what was already
+    /// there is invisible.
+    ///
+    /// Returns `None` where the counter is unavailable — off Windows, and in
+    /// the rare case `user32` cannot be opened.
+    ///
+    /// Prefer [`recipes::read_screen_text`](crate::recipes::read_screen_text),
+    /// which uses this correctly.
+    #[must_use]
+    pub fn clip_sequence(&self) -> Option<u32> {
+        crate::backend::win32::clipboard_sequence()
+    }
+
     // -- Mouse -------------------------------------------------------------
 
     /// Left-clicks once at an absolute screen point.

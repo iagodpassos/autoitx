@@ -22,6 +22,9 @@ mock-loader = ["autoitx-sys/mock-loader"]
 
 [dependencies]
 autoitx-sys = { workspace = true }
+# Also used directly, to side-load the couple of user32 functions AutoItX does
+# not expose. See src/backend/win32.rs.
+libloading = { workspace = true }
 thiserror = { workspace = true }
 parking_lot = { workspace = true }
 bitflags = { workspace = true }

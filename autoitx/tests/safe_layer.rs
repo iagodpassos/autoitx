@@ -489,6 +489,46 @@ fn activate_and_set_state_report_whether_the_window_was_found() {
 }
 
 #[test]
+fn read_screen_text_selects_copies_then_reads() {
+    let h = Harness::new();
+    h.script_string("115597/1");
+
+    let valor = recipes::read_screen_text(
+        &h.ai,
+        keys!("{END}{SHIFTDOWN}{HOME}{SHIFTUP}"),
+        Duration::from_secs(1),
+    )
+    .unwrap();
+
+    assert_eq!(valor, "115597/1");
+    assert_eq!(
+        h.calls(),
+        [
+            r#"AU3_Send("{END}{SHIFTDOWN}{HOME}{SHIFTUP}", 0)"#,
+            r#"AU3_Send("{CTRLDOWN}c{CTRLUP}", 0)"#,
+            "AU3_ClipGet(out, 65536)",
+        ],
+        "the order matters: select, copy, only then read"
+    );
+}
+
+#[test]
+fn read_screen_text_never_writes_to_the_clipboard() {
+    // The idiom it replaces puts a sentinel there first, which clobbers
+    // whatever the user had. Waiting on the sequence number does not need to.
+    let h = Harness::new();
+    h.script_string("qualquer coisa");
+
+    recipes::read_screen_text(&h.ai, keys!("{END}"), Duration::from_secs(1)).unwrap();
+
+    assert!(
+        !h.call_names().contains(&"AU3_ClipPut".to_owned()),
+        "must not have written to the clipboard: {:#?}",
+        h.call_names()
+    );
+}
+
+#[test]
 fn wait_until_idle_gives_up_instead_of_hanging_forever() {
     let h = Harness::new();
     // Cursor 15 is the hourglass: never idle. The hand-written version of this

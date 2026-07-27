@@ -74,6 +74,78 @@ pub fn wait_until_idle(ai: &AutoIt, timeout: Duration) -> Result<()> {
     })
 }
 
+/// Reads the focused field or selection by copying it, without the usual race.
+///
+/// The clipboard is how AutoIt automation reads a screen it cannot query: select,
+/// copy, read. The hard part is knowing *when* the copy landed. The idiom in the
+/// wild is to put a sentinel on the clipboard first and poll until it changes:
+///
+/// ```csharp
+/// AutoItX.ClipPut("NO-VALUE");   // a fixed sentinel, in production code
+/// // ... select and copy ...
+/// if (AutoItX.ClipGet() == "NO-VALUE") { /* assume nothing was copied */ }
+/// ```
+///
+/// That has three failure modes, and all three have been observed:
+///
+/// - the cell genuinely contains the sentinel, and a real value reads as empty;
+/// - the copy re-writes the value that was already there, so nothing appears to
+///   change and the read times out;
+/// - the copy never happens at all — the keystroke went to the wrong window —
+///   and the *stale* clipboard is returned as if it were this field's value.
+///
+/// This waits on the OS clipboard sequence number instead, which Windows bumps
+/// on every write by any process. It cannot collide, it notices identical
+/// rewrites, and a copy that never happened is detected rather than papered
+/// over.
+///
+/// ```no_run
+/// # use autoitx::{AutoIt, recipes, keys};
+/// # use std::time::Duration;
+/// # let ai = AutoIt::new()?;
+/// // Select the current field and read it.
+/// let value = recipes::read_screen_text(
+///     &ai,
+///     keys!("{END}{SHIFTDOWN}{HOME}{SHIFTUP}"),
+///     Duration::from_secs(5),
+/// )?;
+/// # Ok::<(), autoitx::Error>(())
+/// ```
+///
+/// # Errors
+///
+/// [`Error::Timeout`] if nothing reached the clipboard — which means the copy
+/// did not happen, not that the field was empty. An empty field still bumps the
+/// sequence number and yields `Ok("")`.
+pub fn read_screen_text(ai: &AutoIt, select: crate::Keys, timeout: Duration) -> Result<String> {
+    const POLL: Duration = Duration::from_millis(100);
+
+    // One session: a copy is only meaningful against the selection that was
+    // made for it, and anything else touching the keyboard in between breaks
+    // that.
+    let s = ai.session();
+
+    let before = s.clip_sequence();
+    s.send(select)?;
+    s.send(crate::keys!("{CTRLDOWN}c{CTRLUP}"))?;
+
+    match before {
+        Some(before) => {
+            s.wait_until("read_screen_text", timeout, POLL, || {
+                Ok(s.clip_sequence().is_some_and(|now| now != before))
+            })?;
+        }
+        None => {
+            // No sequence counter available. Fall back to a fixed settle,
+            // which is what automation did before this existed — worse, but
+            // better than pretending the copy was instantaneous.
+            s.sleep(POLL * 5);
+        }
+    }
+
+    s.clip_get()
+}
+
 /// Waits for a window to appear, then activates it and waits for focus.
 ///
 /// The opening move of nearly every automation flow.
