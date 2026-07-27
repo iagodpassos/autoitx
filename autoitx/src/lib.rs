@@ -97,68 +97,15 @@ pub mod ext {
     pub use crate::ext_windows as windows;
 
     /// Capabilities with no Windows equivalent.
+    ///
+    /// Defined in `crate::backend::macos`; re-exported here so the two
+    /// platform modules sit side by side.
     #[cfg(any(target_os = "macos", docsrs))]
     #[cfg_attr(docsrs, doc(cfg(target_os = "macos")))]
     pub mod macos {
-        /// A macOS privacy permission this crate may need.
-        ///
-        /// Grants are keyed to a binary's path and code signature, so a plain
-        /// `cargo build` can re-prompt after each rebuild, and every `cargo
-        /// test` run produces a fresh hash-suffixed binary that prompts again.
-        /// Granting the permission to your terminal or IDE, or ad-hoc signing
-        /// with `codesign -s - --force`, avoids the churn.
-        #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-        pub enum Permission {
-            /// Required for all window and control operations.
-            Accessibility,
-            /// Required only for pixel and screen-capture operations.
-            ScreenRecording,
-        }
-
-        /// Whether a [`Permission`] has been granted.
-        #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-        pub enum PermissionStatus {
-            /// Granted; the corresponding APIs will work.
-            Granted,
-            /// Explicitly denied by the user.
-            Denied,
-            /// Never asked. Requesting it will show the system prompt.
-            NotDetermined,
-        }
-
-        impl Permission {
-            /// A `x-apple.systempreferences:` deep link to this permission's
-            /// pane in System Settings.
-            ///
-            /// Embedded in permission errors so the message is actionable
-            /// rather than merely accurate.
-            #[must_use]
-            pub const fn settings_url(self) -> &'static str {
-                match self {
-                    Self::Accessibility => {
-                        "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"
-                    }
-                    Self::ScreenRecording => {
-                        "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture"
-                    }
-                }
-            }
-        }
-
-        #[cfg(test)]
-        mod tests {
-            use super::*;
-
-            #[test]
-            fn settings_urls_are_distinct_and_well_formed() {
-                let a = Permission::Accessibility.settings_url();
-                let s = Permission::ScreenRecording.settings_url();
-                assert_ne!(a, s);
-                for url in [a, s] {
-                    assert!(url.starts_with("x-apple.systempreferences:"));
-                }
-            }
-        }
+        pub use crate::backend::macos::permissions::{
+            Permission, PermissionStatus, check, request,
+        };
     }
 }
 

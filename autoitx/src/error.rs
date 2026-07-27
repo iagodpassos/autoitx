@@ -103,6 +103,21 @@ pub enum Error {
         waited: Duration,
     },
 
+    /// A macOS privacy permission has not been granted.
+    ///
+    /// Carries a copy-pasteable hint rather than only the fact, because without
+    /// the Accessibility grant every AX call fails in a way that reads exactly
+    /// like "window not found" — and chasing that costs an hour.
+    #[cfg(any(target_os = "macos", docsrs))]
+    #[cfg_attr(docsrs, doc(cfg(target_os = "macos")))]
+    #[error("{permission:?} permission not granted — {hint}")]
+    PermissionDenied {
+        /// Which permission is missing.
+        permission: crate::ext::macos::Permission,
+        /// What to do about it, with the System Settings deep link.
+        hint: String,
+    },
+
     /// An underlying I/O failure, e.g. launching a program.
     #[error(transparent)]
     Io(#[from] std::io::Error),

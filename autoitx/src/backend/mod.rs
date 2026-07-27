@@ -14,3 +14,6 @@ pub(crate) mod dll;
 
 #[cfg(any(windows, feature = "mock-loader", docsrs))]
 pub(crate) mod win32;
+
+#[cfg(any(target_os = "macos", docsrs))]
+pub(crate) mod macos;

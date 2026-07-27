@@ -42,6 +42,11 @@ jobs:
       # Accessibility grant. Runners have neither, so those stay #[ignore]d
       # and AUTOITX_GUI_TESTS is left unset.
       - run: cargo test --all-features
+      # And again with no features. On macOS this is the only configuration
+      # that compiles and exercises the *native* backend: `mock-loader`
+      # selects the DLL backend, so `--all-features` alone would leave the
+      # macOS code untested.
+      - run: cargo test
 
   cross-check:
     name: cross-check macOS → Windows
