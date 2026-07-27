@@ -1,9 +1,9 @@
 //! The automation handle.
 
-use crate::backend::dll::Inner;
+use crate::backend::dll::{ControlState, Inner};
 use crate::error::{Error, Result};
 use crate::options::{Options, ShowState, Speed, WinState};
-use crate::{Keys, Point, Rect, Selector, Size};
+use crate::{Control, Keys, Point, Rect, Selector, Size};
 use parking_lot::ReentrantMutexGuard;
 use std::ops::Deref;
 use std::path::PathBuf;
@@ -69,6 +69,39 @@ impl AutoIt {
     #[must_use]
     pub fn options(&self) -> &Options {
         self.inner.options()
+    }
+
+    /// Sets one AutoIt option by name, returning its previous value.
+    ///
+    /// The escape hatch for options [`Options`] does not model. Names are
+    /// AutoIt's own: `"MouseCoordMode"`, `"WinTitleMatchMode"`,
+    /// `"SendKeyDelay"`, and the rest.
+    ///
+    /// ```no_run
+    /// # use autoitx::AutoIt;
+    /// # let ai = AutoIt::new()?;
+    /// // Match window titles as a substring rather than a prefix.
+    /// let previous = ai.set_option("WinTitleMatchMode", 2)?;
+    /// # Ok::<(), autoitx::Error>(())
+    /// ```
+    ///
+    /// # This is global and sticky
+    ///
+    /// AutoIt's options are process-wide and outlive the call that set them, so
+    /// a change here affects every later call from every thread. That is why
+    /// [`Options`] exists: it names the defaults automation silently depends on,
+    /// so a change is a visible decision rather than an inherited surprise.
+    pub fn set_option(&self, option: &str, value: i32) -> Result<i32> {
+        self.inner.set_option(option, value)
+    }
+
+    /// Reads one AutoIt option without changing it.
+    ///
+    /// Uses the sentinel AutoIt provides for exactly this, which is also how
+    /// the defaults-parity test checks that [`Options::default`] still matches
+    /// what the DLL installs.
+    pub fn get_option(&self, option: &str) -> Result<i32> {
+        self.inner.set_option(option, autoitx_sys::AU3_INTDEFAULT)
     }
 
     /// Takes exclusive control for a run of calls.
@@ -529,6 +562,42 @@ impl AutoIt {
         self.inner.tool_tip(text, at)
     }
 
+    /// Changes a process's scheduling priority.
+    ///
+    /// `priority` is AutoIt's scale: 0 idle, 1 below normal, 2 normal, 3 above
+    /// normal, 4 high, 5 realtime.
+    pub fn process_set_priority(&self, name: &str, priority: i32) -> Result<bool> {
+        self.inner.process_set_priority(name, priority)
+    }
+
+    /// Searches a screen region for a colour.
+    ///
+    /// `variation` (0–255) lets each channel differ by that much, which is how
+    /// you cope with anti-aliasing and subtle theme differences. `step` samples
+    /// every nth pixel — faster, at the risk of stepping over a small target.
+    ///
+    /// `None` means the colour is not there, which is an ordinary answer rather
+    /// than a failure: polling for a colour to appear is the usual reason to
+    /// call this.
+    pub fn pixel_search(
+        &self,
+        area: Rect,
+        colour: u32,
+        variation: u32,
+        step: u32,
+    ) -> Result<Option<Point>> {
+        self.inner.pixel_search(area, colour, variation, step)
+    }
+
+    /// A checksum of a screen region, for detecting that it changed.
+    ///
+    /// Cheaper than capturing and comparing images, and enough to answer "has
+    /// this part of the screen finished redrawing?". The value is not stable
+    /// across machines or themes — compare it only against itself, over time.
+    pub fn pixel_checksum(&self, area: Rect, step: u32) -> Result<u32> {
+        self.inner.pixel_checksum(area, step)
+    }
+
     /// The colour of one screen pixel, as `0xRRGGBB`.
     ///
     /// # No failure signal
@@ -613,6 +682,177 @@ impl AutoIt {
     #[must_use]
     pub fn raw(&self) -> &autoitx_sys::Au3 {
         self.inner.raw()
+    }
+
+    // -- Controls ----------------------------------------------------------
+    //
+    // Addressing a control beats clicking a coordinate: it survives the window
+    // moving, the display changing, and the layout shifting. Coordinate clicks
+    // are why automation built that way pins a screen resolution and refuses to
+    // start when it changes.
+
+    /// Clicks a control, optionally at a point inside it.
+    ///
+    /// Returns whether the control was found. `at` defaults to the centre.
+    pub fn control_click(
+        &self,
+        window: &Selector,
+        control: &Control,
+        button: MouseButton,
+        clicks: u32,
+        at: Option<Point>,
+    ) -> Result<bool> {
+        self.inner
+            .control_click(window, control, button.as_str(), clicks, at)
+    }
+
+    /// Sends keystrokes straight to a control.
+    ///
+    /// Unlike [`send`](Self::send), this does not require the window to be
+    /// focused — which also means it does not steal focus from whoever is at
+    /// the machine.
+    pub fn control_send(
+        &self,
+        window: &Selector,
+        control: &Control,
+        keys: impl AsRef<Keys>,
+    ) -> Result<bool> {
+        self.inner
+            .control_send(window, control, keys.as_ref(), false)
+    }
+
+    /// Sends keystrokes literally, with no `{}!+^#` interpretation.
+    pub fn control_send_raw(
+        &self,
+        window: &Selector,
+        control: &Control,
+        text: &str,
+    ) -> Result<bool> {
+        self.inner
+            .control_send(window, control, &Keys::raw_unchecked(text.to_owned()), true)
+    }
+
+    /// Replaces a control's text outright.
+    ///
+    /// Faster and more reliable than typing into it: no keystrokes, no
+    /// auto-complete interfering, no focus required.
+    pub fn control_set_text(
+        &self,
+        window: &Selector,
+        control: &Control,
+        text: &str,
+    ) -> Result<bool> {
+        self.inner.control_set_text(window, control, text)
+    }
+
+    /// Reads a control's text.
+    ///
+    /// The direct answer to what automation usually gets by selecting, copying
+    /// and reading the clipboard — no keystrokes and no clipboard involved.
+    pub fn control_get_text(&self, window: &Selector, control: &Control) -> Result<String> {
+        self.inner.control_get_text(window, control)
+    }
+
+    /// The `ClassnameNN` of whichever control has focus.
+    ///
+    /// Useful for discovering what a window contains while it is on screen.
+    pub fn control_get_focus(&self, window: &Selector) -> Result<String> {
+        self.inner.control_get_focus(window)
+    }
+
+    /// A control's position and size, relative to its window.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::ControlNotFound`] if the window has no such control.
+    pub fn control_get_pos(&self, window: &Selector, control: &Control) -> Result<Rect> {
+        self.inner.control_get_pos(window, control)
+    }
+
+    /// A control's window handle.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::WindowNotFound`] or [`Error::ControlNotFound`].
+    pub fn control_get_handle(&self, window: &Selector, control: &Control) -> Result<u64> {
+        self.inner.control_get_handle(window, control)
+    }
+
+    /// Moves and resizes a control within its window.
+    pub fn control_move(&self, window: &Selector, control: &Control, r: Rect) -> Result<bool> {
+        self.inner.control_move(window, control, r)
+    }
+
+    /// Gives a control keyboard focus.
+    pub fn control_focus(&self, window: &Selector, control: &Control) -> Result<bool> {
+        self.inner
+            .control_set_state(window, control, ControlState::Focus)
+    }
+
+    /// Enables a control for input.
+    pub fn control_enable(&self, window: &Selector, control: &Control) -> Result<bool> {
+        self.inner
+            .control_set_state(window, control, ControlState::Enable)
+    }
+
+    /// Greys a control out.
+    pub fn control_disable(&self, window: &Selector, control: &Control) -> Result<bool> {
+        self.inner
+            .control_set_state(window, control, ControlState::Disable)
+    }
+
+    /// Shows a hidden control.
+    pub fn control_show(&self, window: &Selector, control: &Control) -> Result<bool> {
+        self.inner
+            .control_set_state(window, control, ControlState::Show)
+    }
+
+    /// Hides a control.
+    pub fn control_hide(&self, window: &Selector, control: &Control) -> Result<bool> {
+        self.inner
+            .control_set_state(window, control, ControlState::Hide)
+    }
+
+    /// Runs one of AutoIt's control commands.
+    ///
+    /// The catch-all for widget-specific operations — `"IsChecked"`,
+    /// `"Check"`, `"ShowDropDown"`, `"SelectString"`, `"GetCurrentLine"` and
+    /// the rest. See AutoIt's `ControlCommand` documentation for the full set;
+    /// the command and its argument are passed through untouched.
+    pub fn control_command(
+        &self,
+        window: &Selector,
+        control: &Control,
+        command: &str,
+        extra: &str,
+    ) -> Result<String> {
+        self.inner.control_command(window, control, command, extra)
+    }
+
+    /// Runs one of AutoIt's list-view commands, e.g. `"GetItemCount"`.
+    pub fn control_list_view(
+        &self,
+        window: &Selector,
+        control: &Control,
+        command: &str,
+        extra1: &str,
+        extra2: &str,
+    ) -> Result<String> {
+        self.inner
+            .control_list_view(window, control, command, extra1, extra2)
+    }
+
+    /// Runs one of AutoIt's tree-view commands, e.g. `"Expand"`.
+    pub fn control_tree_view(
+        &self,
+        window: &Selector,
+        control: &Control,
+        command: &str,
+        extra1: &str,
+        extra2: &str,
+    ) -> Result<String> {
+        self.inner
+            .control_tree_view(window, control, command, extra1, extra2)
     }
 
     /// The shape of the system mouse cursor.

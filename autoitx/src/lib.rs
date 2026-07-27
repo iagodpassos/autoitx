@@ -54,6 +54,13 @@
 
 mod backend;
 
+// Re-exported as `ext::windows`, which is how it should be named in code. It is
+// `pub` here only because a `pub use` cannot re-export a private module.
+#[cfg(any(windows, docsrs))]
+#[doc(hidden)]
+pub mod ext_windows;
+
+pub mod control;
 pub mod error;
 pub mod geometry;
 pub mod keys;
@@ -68,6 +75,7 @@ pub mod autoit;
 #[cfg_attr(docsrs, doc(cfg(any(windows, feature = "mock-loader"))))]
 pub use autoit::{AutoIt, AutoItBuilder, MouseButton, Session};
 
+pub use control::Control;
 pub use error::{Error, Result};
 pub use geometry::{PixelCoordSpace, Point, Rect, Size};
 pub use keys::Keys;
@@ -81,111 +89,12 @@ pub use selector::Selector;
 /// read the cursor shape has already half-completed a transaction in some ERP.
 pub mod ext {
     /// Capabilities with no macOS equivalent.
+    ///
+    /// Defined in `crate::ext_windows`; re-exported here so the two platform
+    /// modules sit side by side.
     #[cfg(any(windows, docsrs))]
     #[cfg_attr(docsrs, doc(cfg(windows)))]
-    pub mod windows {
-        /// The shape of the mouse cursor, as reported by `AU3_MouseGetCursor`.
-        ///
-        /// Windows-only: macOS has no public API for the system-wide cursor
-        /// shape (`NSCursor::currentSystemCursor` reports what *your* process
-        /// would draw, not what is on screen). The portable replacement is
-        /// [`recipes`]`::wait_until_idle`, which measures whether the target
-        /// app is responsive rather than inferring it from the cursor.
-        ///
-        /// [`recipes`]: crate::recipes
-        #[repr(i32)]
-        #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-        #[non_exhaustive]
-        pub enum MouseCursor {
-            /// Unrecognized, or an application-defined cursor.
-            Unknown = 0,
-            /// Arrow with an hourglass — the app is starting something.
-            AppStarting = 1,
-            /// The ordinary arrow.
-            Arrow = 2,
-            /// Crosshair.
-            Cross = 3,
-            /// Arrow with a question mark.
-            Help = 4,
-            /// Text insertion caret.
-            IBeam = 5,
-            /// Icon drag cursor.
-            Icon = 6,
-            /// The "no drop" circle-slash.
-            No = 7,
-            /// Generic resize.
-            Size = 8,
-            /// Four-way move.
-            SizeAll = 9,
-            /// Diagonal resize, northeast/southwest.
-            SizeNeSw = 10,
-            /// Vertical resize.
-            SizeNs = 11,
-            /// Diagonal resize, northwest/southeast.
-            SizeNwSe = 12,
-            /// Horizontal resize.
-            SizeWe = 13,
-            /// Up arrow.
-            UpArrow = 14,
-            /// The hourglass / spinner — the app is busy.
-            Wait = 15,
-        }
-
-        impl MouseCursor {
-            /// Maps a raw `AU3_MouseGetCursor` code, tolerating unknown values.
-            #[must_use]
-            pub const fn from_code(code: i32) -> Self {
-                match code {
-                    1 => Self::AppStarting,
-                    2 => Self::Arrow,
-                    3 => Self::Cross,
-                    4 => Self::Help,
-                    5 => Self::IBeam,
-                    6 => Self::Icon,
-                    7 => Self::No,
-                    8 => Self::Size,
-                    9 => Self::SizeAll,
-                    10 => Self::SizeNeSw,
-                    11 => Self::SizeNs,
-                    12 => Self::SizeNwSe,
-                    13 => Self::SizeWe,
-                    14 => Self::UpArrow,
-                    15 => Self::Wait,
-                    _ => Self::Unknown,
-                }
-            }
-
-            /// Whether the cursor indicates the application is ready for input.
-            ///
-            /// Names the idiom that AutoIt automation writes by hand as
-            /// `cursor == 2 || cursor == 5`: an arrow means idle, and an I-beam
-            /// means idle over a text field.
-            #[must_use]
-            pub const fn is_idle(self) -> bool {
-                matches!(self, Self::Arrow | Self::IBeam)
-            }
-        }
-
-        #[cfg(test)]
-        mod tests {
-            use super::*;
-
-            #[test]
-            fn idle_is_arrow_or_ibeam_only() {
-                assert!(MouseCursor::from_code(2).is_idle());
-                assert!(MouseCursor::from_code(5).is_idle());
-                assert!(!MouseCursor::from_code(15).is_idle()); // Wait
-                assert!(!MouseCursor::from_code(1).is_idle()); // AppStarting
-            }
-
-            #[test]
-            fn unknown_codes_do_not_panic() {
-                assert_eq!(MouseCursor::from_code(-1), MouseCursor::Unknown);
-                assert_eq!(MouseCursor::from_code(9999), MouseCursor::Unknown);
-                assert!(!MouseCursor::from_code(9999).is_idle());
-            }
-        }
-    }
+    pub use crate::ext_windows as windows;
 
     /// Capabilities with no Windows equivalent.
     #[cfg(any(target_os = "macos", docsrs))]

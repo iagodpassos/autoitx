@@ -17,7 +17,7 @@
 
 use crate::error::{Error, Result};
 use crate::options::{Options, ShowState, Speed, WinState};
-use crate::{Keys, Point, Rect, Selector, Size};
+use crate::{Control, Keys, Point, Rect, Selector, Size};
 use autoitx_sys::{AU3_INTDEFAULT, Au3, POINT, RECT};
 use parking_lot::{ReentrantMutex, ReentrantMutexGuard};
 use std::path::Path;
@@ -225,6 +225,16 @@ impl Inner {
     fn sel(&self, s: &Selector) -> Result<Vec<u16>> {
         wide(&s.to_string(), "selector")
     }
+}
+
+/// The one-shot control state changes, which share a call shape.
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum ControlState {
+    Focus,
+    Enable,
+    Disable,
+    Show,
+    Hide,
 }
 
 /// Seconds for AutoIt's timeout parameters; `None` means wait forever.
@@ -666,6 +676,511 @@ impl Inner {
         let (x, y) = at.map_or((AU3_INTDEFAULT, AU3_INTDEFAULT), |p| (p.x, p.y));
         au3!(self, AU3_ToolTip(t.as_ptr(), x, y));
         Ok(())
+    }
+
+    pub(crate) fn pixel_search(
+        &self,
+        area: Rect,
+        colour: u32,
+        variation: u32,
+        step: u32,
+    ) -> Result<Option<Point>> {
+        let mut r = RECT {
+            left: area.x,
+            top: area.y,
+            right: area.x + area.w,
+            bottom: area.y + area.h,
+        };
+        let mut found = POINT { x: -1, y: -1 };
+        let (_, code) = au3!(
+            self,
+            AU3_PixelSearch(
+                &raw mut r,
+                colour as i32,
+                variation as i32,
+                step.max(1) as i32,
+                &raw mut found,
+            )
+        );
+        // A miss is ordinary here, not a failure: "the colour is not on screen"
+        // is exactly what callers poll for.
+        Ok(if code == 0 {
+            Some(Point::new(found.x, found.y))
+        } else {
+            None
+        })
+    }
+
+    pub(crate) fn pixel_checksum(&self, area: Rect, step: u32) -> Result<u32> {
+        let mut r = RECT {
+            left: area.x,
+            top: area.y,
+            right: area.x + area.w,
+            bottom: area.y + area.h,
+        };
+        let (sum, _) = au3!(self, AU3_PixelChecksum(&raw mut r, step.max(1) as i32));
+        Ok(sum)
+    }
+
+    // Only reachable through `ext::windows`, which carries the same gate.
+    #[cfg(any(windows, docsrs))]
+    pub(crate) fn win_get_caret_pos(&self) -> Result<Point> {
+        let mut p = POINT::default();
+        let (_, code) = au3!(self, AU3_WinGetCaretPos(&raw mut p));
+        if code != 0 {
+            return Err(Error::AutoItFailed {
+                func: "AU3_WinGetCaretPos",
+                code,
+            });
+        }
+        Ok(Point::new(p.x, p.y))
+    }
+
+    pub(crate) fn process_set_priority(&self, name: &str, priority: i32) -> Result<bool> {
+        let w = wide(name, "process name")?;
+        let (ok, _) = au3!(self, AU3_ProcessSetPriority(w.as_ptr(), priority));
+        Ok(ok != 0)
+    }
+
+    /// Reads or writes one AutoIt option.
+    ///
+    /// Passing `AU3_INTDEFAULT` reads the current value without changing it,
+    /// which is how the defaults-parity test works.
+    pub(crate) fn set_option(&self, option: &str, value: i32) -> Result<i32> {
+        let o = wide(option, "option name")?;
+        let (previous, _) = au3!(self, AU3_AutoItSetOption(o.as_ptr(), value));
+        Ok(previous)
+    }
+
+    // -- Windows-only ------------------------------------------------------
+
+    // Only reachable through `ext::windows`, which carries the same gate.
+    #[cfg(any(windows, docsrs))]
+    pub(crate) fn win_set_trans(&self, s: &Selector, alpha: u8) -> Result<bool> {
+        let w = self.sel(s)?;
+        let (ok, _) = au3!(
+            self,
+            AU3_WinSetTrans(w.as_ptr(), EMPTY_WIDE.as_ptr(), i32::from(alpha))
+        );
+        Ok(ok != 0)
+    }
+
+    // Only reachable through `ext::windows`, which carries the same gate.
+    #[cfg(any(windows, docsrs))]
+    pub(crate) fn win_menu_select_item(&self, s: &Selector, path: &[&str]) -> Result<bool> {
+        let w = self.sel(s)?;
+        // Exactly eight levels, empty-padded: AutoIt takes them as eight
+        // separate parameters rather than a list.
+        let mut items = Vec::with_capacity(8);
+        for i in 0..8 {
+            items.push(match path.get(i) {
+                Some(t) => wide(t, "menu item")?,
+                None => vec![0u16],
+            });
+        }
+        let (ok, _) = au3!(
+            self,
+            AU3_WinMenuSelectItem(
+                w.as_ptr(),
+                EMPTY_WIDE.as_ptr(),
+                items[0].as_ptr(),
+                items[1].as_ptr(),
+                items[2].as_ptr(),
+                items[3].as_ptr(),
+                items[4].as_ptr(),
+                items[5].as_ptr(),
+                items[6].as_ptr(),
+                items[7].as_ptr(),
+            )
+        );
+        Ok(ok != 0)
+    }
+
+    // Only reachable through `ext::windows`, which carries the same gate.
+    #[cfg(any(windows, docsrs))]
+    pub(crate) fn statusbar_get_text(&self, s: &Selector, part: u32) -> Result<String> {
+        let w = self.sel(s)?;
+        self.call_str("AU3_StatusbarGetText", SMALL_BUF, |buf, cap| {
+            let (_, code) = au3!(
+                self,
+                AU3_StatusbarGetText(w.as_ptr(), EMPTY_WIDE.as_ptr(), part as i32, buf, cap)
+            );
+            code
+        })
+    }
+
+    // Only reachable through `ext::windows`, which carries the same gate.
+    #[cfg(any(windows, docsrs))]
+    pub(crate) fn drive_map_add(
+        &self,
+        device: &str,
+        share: &str,
+        user: &str,
+        password: &str,
+    ) -> Result<String> {
+        let d = wide(device, "device")?;
+        let sh = wide(share, "share")?;
+        let u = wide(user, "user")?;
+        let p = wide(password, "password")?;
+        self.call_str("AU3_DriveMapAdd", SMALL_BUF, |buf, cap| {
+            let (_, code) = au3!(
+                self,
+                AU3_DriveMapAdd(d.as_ptr(), sh.as_ptr(), 0, u.as_ptr(), p.as_ptr(), buf, cap,)
+            );
+            code
+        })
+    }
+
+    // Only reachable through `ext::windows`, which carries the same gate.
+    #[cfg(any(windows, docsrs))]
+    pub(crate) fn drive_map_del(&self, device: &str) -> Result<bool> {
+        let d = wide(device, "device")?;
+        let (ok, _) = au3!(self, AU3_DriveMapDel(d.as_ptr()));
+        Ok(ok != 0)
+    }
+
+    // Only reachable through `ext::windows`, which carries the same gate.
+    #[cfg(any(windows, docsrs))]
+    pub(crate) fn drive_map_get(&self, device: &str) -> Result<String> {
+        let d = wide(device, "device")?;
+        self.call_str("AU3_DriveMapGet", SMALL_BUF, |buf, cap| {
+            let (_, code) = au3!(self, AU3_DriveMapGet(d.as_ptr(), buf, cap));
+            code
+        })
+    }
+
+    // Only reachable through `ext::windows`, which carries the same gate.
+    #[cfg(any(windows, docsrs))]
+    pub(crate) fn run_as(
+        &self,
+        user: &str,
+        domain: &str,
+        password: &str,
+        command: &str,
+        working_dir: Option<&str>,
+        wait: bool,
+    ) -> Result<i32> {
+        let u = wide(user, "user")?;
+        let dom = wide(domain, "domain")?;
+        let p = wide(password, "password")?;
+        let cmd = wide(command, "command")?;
+        let dir = match working_dir {
+            Some(d) => wide(d, "working directory")?,
+            None => vec![0u16],
+        };
+        // Logon flag 1: load the user's profile, which is what makes mapped
+        // drives and per-user settings behave as that user expects.
+        let (ret, code) = if wait {
+            au3!(
+                self,
+                AU3_RunAsWait(
+                    u.as_ptr(),
+                    dom.as_ptr(),
+                    p.as_ptr(),
+                    1,
+                    cmd.as_ptr(),
+                    dir.as_ptr(),
+                    AU3_INTDEFAULT,
+                )
+            )
+        } else {
+            au3!(
+                self,
+                AU3_RunAs(
+                    u.as_ptr(),
+                    dom.as_ptr(),
+                    p.as_ptr(),
+                    1,
+                    cmd.as_ptr(),
+                    dir.as_ptr(),
+                    AU3_INTDEFAULT,
+                )
+            )
+        };
+        if ret == 0 && !wait {
+            return Err(Error::AutoItFailed {
+                func: "AU3_RunAs",
+                code,
+            });
+        }
+        Ok(ret)
+    }
+
+    // Only reachable through `ext::windows`, which carries the same gate.
+    #[cfg(any(windows, docsrs))]
+    pub(crate) fn shutdown(&self, flags: i32) -> Result<bool> {
+        let (ok, _) = au3!(self, AU3_Shutdown(flags));
+        Ok(ok != 0)
+    }
+
+    // -- Controls ----------------------------------------------------------
+    //
+    // Every one of these takes (window, control) and returns 1/0, except the
+    // string-returning ones, which follow the output-buffer pattern. Measured
+    // to behave like their window counterparts.
+
+    pub(crate) fn control_click(
+        &self,
+        win: &Selector,
+        ctrl: &Control,
+        button: &str,
+        clicks: u32,
+        at: Option<Point>,
+    ) -> Result<bool> {
+        let w = self.sel(win)?;
+        let c = wide(ctrl.as_str(), "control")?;
+        let b = wide(button, "mouse button")?;
+        // A position inside the control, or its centre when omitted.
+        let (x, y) = at.map_or((AU3_INTDEFAULT, AU3_INTDEFAULT), |p| (p.x, p.y));
+        let (ok, _) = au3!(
+            self,
+            AU3_ControlClick(
+                w.as_ptr(),
+                EMPTY_WIDE.as_ptr(),
+                c.as_ptr(),
+                b.as_ptr(),
+                clicks as i32,
+                x,
+                y,
+            )
+        );
+        Ok(ok != 0)
+    }
+
+    pub(crate) fn control_send(
+        &self,
+        win: &Selector,
+        ctrl: &Control,
+        keys: &Keys,
+        raw: bool,
+    ) -> Result<bool> {
+        let w = self.sel(win)?;
+        let c = wide(ctrl.as_str(), "control")?;
+        let k = wide(keys.as_str(), "keys")?;
+        let (ok, _) = au3!(
+            self,
+            AU3_ControlSend(
+                w.as_ptr(),
+                EMPTY_WIDE.as_ptr(),
+                c.as_ptr(),
+                k.as_ptr(),
+                i32::from(raw),
+            )
+        );
+        Ok(ok != 0)
+    }
+
+    pub(crate) fn control_set_text(
+        &self,
+        win: &Selector,
+        ctrl: &Control,
+        text: &str,
+    ) -> Result<bool> {
+        let w = self.sel(win)?;
+        let c = wide(ctrl.as_str(), "control")?;
+        let t = wide(text, "control text")?;
+        let (ok, _) = au3!(
+            self,
+            AU3_ControlSetText(w.as_ptr(), EMPTY_WIDE.as_ptr(), c.as_ptr(), t.as_ptr())
+        );
+        Ok(ok != 0)
+    }
+
+    pub(crate) fn control_get_text(&self, win: &Selector, ctrl: &Control) -> Result<String> {
+        let w = self.sel(win)?;
+        let c = wide(ctrl.as_str(), "control")?;
+        self.call_str("AU3_ControlGetText", LARGE_BUF, |buf, cap| {
+            let (_, code) = au3!(
+                self,
+                AU3_ControlGetText(w.as_ptr(), EMPTY_WIDE.as_ptr(), c.as_ptr(), buf, cap)
+            );
+            code
+        })
+    }
+
+    pub(crate) fn control_get_focus(&self, win: &Selector) -> Result<String> {
+        let w = self.sel(win)?;
+        self.call_str("AU3_ControlGetFocus", SMALL_BUF, |buf, cap| {
+            let (_, code) = au3!(
+                self,
+                AU3_ControlGetFocus(w.as_ptr(), EMPTY_WIDE.as_ptr(), buf, cap)
+            );
+            code
+        })
+    }
+
+    pub(crate) fn control_get_pos(&self, win: &Selector, ctrl: &Control) -> Result<Rect> {
+        let w = self.sel(win)?;
+        let c = wide(ctrl.as_str(), "control")?;
+        let mut rect = RECT::default();
+        // Out-parameter, so the error flag decides — same rule as WinGetPos.
+        let (_, code) = au3!(
+            self,
+            AU3_ControlGetPos(w.as_ptr(), EMPTY_WIDE.as_ptr(), c.as_ptr(), &raw mut rect)
+        );
+        if code != 0 {
+            return Err(Error::ControlNotFound {
+                selector: Box::new(win.clone()),
+                control: ctrl.clone(),
+            });
+        }
+        Ok(Rect::from(rect))
+    }
+
+    pub(crate) fn control_get_handle(&self, win: &Selector, ctrl: &Control) -> Result<u64> {
+        // Takes the *window handle*, not a selector, unlike its siblings.
+        let hwnd = self.win_get_handle(win)? as usize as autoitx_sys::HWND;
+        let c = wide(ctrl.as_str(), "control")?;
+        let (h, _) = au3!(self, AU3_ControlGetHandle(hwnd, c.as_ptr()));
+        if h.is_null() {
+            return Err(Error::ControlNotFound {
+                selector: Box::new(win.clone()),
+                control: ctrl.clone(),
+            });
+        }
+        Ok(h as usize as u64)
+    }
+
+    pub(crate) fn control_move(&self, win: &Selector, ctrl: &Control, r: Rect) -> Result<bool> {
+        let w = self.sel(win)?;
+        let c = wide(ctrl.as_str(), "control")?;
+        let (ok, _) = au3!(
+            self,
+            AU3_ControlMove(
+                w.as_ptr(),
+                EMPTY_WIDE.as_ptr(),
+                c.as_ptr(),
+                r.x,
+                r.y,
+                r.w,
+                r.h
+            )
+        );
+        Ok(ok != 0)
+    }
+
+    /// The five one-shot state changes, which share a shape.
+    pub(crate) fn control_set_state(
+        &self,
+        win: &Selector,
+        ctrl: &Control,
+        what: ControlState,
+    ) -> Result<bool> {
+        let w = self.sel(win)?;
+        let c = wide(ctrl.as_str(), "control")?;
+        let (ok, _) = match what {
+            ControlState::Focus => au3!(
+                self,
+                AU3_ControlFocus(w.as_ptr(), EMPTY_WIDE.as_ptr(), c.as_ptr())
+            ),
+            ControlState::Enable => au3!(
+                self,
+                AU3_ControlEnable(w.as_ptr(), EMPTY_WIDE.as_ptr(), c.as_ptr())
+            ),
+            ControlState::Disable => au3!(
+                self,
+                AU3_ControlDisable(w.as_ptr(), EMPTY_WIDE.as_ptr(), c.as_ptr())
+            ),
+            ControlState::Show => au3!(
+                self,
+                AU3_ControlShow(w.as_ptr(), EMPTY_WIDE.as_ptr(), c.as_ptr())
+            ),
+            ControlState::Hide => au3!(
+                self,
+                AU3_ControlHide(w.as_ptr(), EMPTY_WIDE.as_ptr(), c.as_ptr())
+            ),
+        };
+        Ok(ok != 0)
+    }
+
+    pub(crate) fn control_command(
+        &self,
+        win: &Selector,
+        ctrl: &Control,
+        command: &str,
+        extra: &str,
+    ) -> Result<String> {
+        let w = self.sel(win)?;
+        let c = wide(ctrl.as_str(), "control")?;
+        let cmd = wide(command, "control command")?;
+        let ex = wide(extra, "control command argument")?;
+        self.call_str("AU3_ControlCommand", LARGE_BUF, |buf, cap| {
+            let (_, code) = au3!(
+                self,
+                AU3_ControlCommand(
+                    w.as_ptr(),
+                    EMPTY_WIDE.as_ptr(),
+                    c.as_ptr(),
+                    cmd.as_ptr(),
+                    ex.as_ptr(),
+                    buf,
+                    cap,
+                )
+            );
+            code
+        })
+    }
+
+    pub(crate) fn control_list_view(
+        &self,
+        win: &Selector,
+        ctrl: &Control,
+        command: &str,
+        e1: &str,
+        e2: &str,
+    ) -> Result<String> {
+        let w = self.sel(win)?;
+        let c = wide(ctrl.as_str(), "control")?;
+        let cmd = wide(command, "list-view command")?;
+        let a = wide(e1, "list-view argument")?;
+        let b = wide(e2, "list-view argument")?;
+        self.call_str("AU3_ControlListView", LARGE_BUF, |buf, cap| {
+            let (_, code) = au3!(
+                self,
+                AU3_ControlListView(
+                    w.as_ptr(),
+                    EMPTY_WIDE.as_ptr(),
+                    c.as_ptr(),
+                    cmd.as_ptr(),
+                    a.as_ptr(),
+                    b.as_ptr(),
+                    buf,
+                    cap,
+                )
+            );
+            code
+        })
+    }
+
+    pub(crate) fn control_tree_view(
+        &self,
+        win: &Selector,
+        ctrl: &Control,
+        command: &str,
+        e1: &str,
+        e2: &str,
+    ) -> Result<String> {
+        let w = self.sel(win)?;
+        let c = wide(ctrl.as_str(), "control")?;
+        let cmd = wide(command, "tree-view command")?;
+        let a = wide(e1, "tree-view argument")?;
+        let b = wide(e2, "tree-view argument")?;
+        self.call_str("AU3_ControlTreeView", LARGE_BUF, |buf, cap| {
+            let (_, code) = au3!(
+                self,
+                AU3_ControlTreeView(
+                    w.as_ptr(),
+                    EMPTY_WIDE.as_ptr(),
+                    c.as_ptr(),
+                    cmd.as_ptr(),
+                    a.as_ptr(),
+                    b.as_ptr(),
+                    buf,
+                    cap,
+                )
+            );
+            code
+        })
     }
 
     pub(crate) fn sleep(&self, d: Duration) {

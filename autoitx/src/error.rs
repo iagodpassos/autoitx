@@ -36,6 +36,19 @@ pub enum Error {
         selector: Box<Selector>,
     },
 
+    /// The window was found, but it has no such control.
+    ///
+    /// Named separately from [`WindowNotFound`](Self::WindowNotFound) because
+    /// the two have different fixes: a wrong window selector versus a wrong
+    /// control identifier.
+    #[error("window {selector} has no control matching {control}")]
+    ControlNotFound {
+        /// The window that was found.
+        selector: Box<Selector>,
+        /// The control identifier that matched nothing.
+        control: crate::Control,
+    },
+
     /// An operation did not complete in time.
     #[error("{operation} timed out after {waited:?}")]
     Timeout {
