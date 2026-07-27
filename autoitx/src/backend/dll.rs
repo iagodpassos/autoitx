@@ -16,7 +16,7 @@
 //! - **AutoItX is not reentrant.** Every call takes a process-wide lock.
 
 use crate::error::{Error, Result};
-use crate::options::{Options, ShowState, Speed};
+use crate::options::{Options, ShowState, Speed, WinState};
 use crate::{Keys, Point, Rect, Selector};
 use autoitx_sys::{AU3_INTDEFAULT, Au3, RECT};
 use parking_lot::{ReentrantMutex, ReentrantMutexGuard};
@@ -29,6 +29,37 @@ const SMALL_BUF: usize = 1024;
 const LARGE_BUF: usize = 65_536;
 /// Default ceiling on a returned string, in wide chars (32 MiB of UTF-16).
 const DEFAULT_MAX_CHARS: usize = 16 * 1024 * 1024;
+
+/// What `AU3_WinGetProcess` returns when no window matched: `(DWORD)-1`.
+///
+/// Not 0, which is what one would guess and what an earlier version of this
+/// checked for. Established by calling the real DLL against a window that does
+/// not exist.
+const INVALID_PID: u32 = u32::MAX;
+
+// ---------------------------------------------------------------------------
+// How this ABI reports failure
+// ---------------------------------------------------------------------------
+//
+// There is no single convention, and the documentation on autoitscript.com
+// describes AutoIt's *script* functions rather than the DLL's. The table below
+// was measured by calling the real DLL against a window that exists and one
+// that does not, and it is the authority for the wrappers in this file:
+//
+//   function                existing        missing         signal
+//   ---------------------------------------------------------------------
+//   WinExists               ret 1           ret 0           return
+//   WinActive               ret 1           ret 0           return
+//   WinActivate             ret 1           ret 0           return
+//   WinSetState             ret 1           ret 0           return
+//   WinGetProcess           ret <pid>       ret 0xFFFFFFFF  return, but the
+//                                                           sentinel is -1
+//   WinGetState             ret <bits>      err 1           error flag
+//   WinGetPos               ret 0, err 0    ret 1, err 1    error flag
+//
+// Note `WinGetPos`: its return is 0 on *success* and 1 on failure — inverted
+// against every other function here. Reading it as a status is not merely
+// unreliable, it is backwards.
 
 // ---------------------------------------------------------------------------
 // String marshalling
@@ -260,10 +291,14 @@ impl Inner {
         Ok(active != 0)
     }
 
-    pub(crate) fn win_activate(&self, s: &Selector) -> Result<()> {
+    pub(crate) fn win_activate(&self, s: &Selector) -> Result<bool> {
         let w = self.sel(s)?;
-        au3!(self, AU3_WinActivate(w.as_ptr(), EMPTY_WIDE.as_ptr()));
-        Ok(())
+        // Measured, not assumed: the DLL returns 1/0 here. AutoIt's *script*
+        // documentation says `WinActivate` returns the window handle, which
+        // would make "non-zero means success" unsafe — a handle whose low 32
+        // bits are zero would read as failure. The DLL form does not do that.
+        let (ok, _) = au3!(self, AU3_WinActivate(w.as_ptr(), EMPTY_WIDE.as_ptr()));
+        Ok(ok != 0)
     }
 
     pub(crate) fn win_wait_active(&self, s: &Selector, t: Option<Duration>) -> Result<bool> {
@@ -302,16 +337,36 @@ impl Inner {
     pub(crate) fn win_get_process(&self, s: &Selector) -> Result<u32> {
         let w = self.sel(s)?;
         let (pid, _) = au3!(self, AU3_WinGetProcess(w.as_ptr(), EMPTY_WIDE.as_ptr()));
+        // Failure is `(DWORD)-1`, not 0 — measured against a real desktop.
+        //
+        // This one had teeth: a caller checking `pid != 0` before killing the
+        // process would sail past 4294967295 and try to terminate it. Returning
+        // the sentinel as if it were a process id is not an option.
+        if pid == INVALID_PID {
+            return Err(Error::window_not_found(s));
+        }
         Ok(pid)
     }
 
-    pub(crate) fn win_set_state(&self, s: &Selector, state: ShowState) -> Result<()> {
+    pub(crate) fn win_set_state(&self, s: &Selector, state: ShowState) -> Result<bool> {
         let w = self.sel(s)?;
-        au3!(
+        // Measured: 1 when the window was found, 0 when it was not.
+        let (ok, _) = au3!(
             self,
             AU3_WinSetState(w.as_ptr(), EMPTY_WIDE.as_ptr(), state as i32)
         );
-        Ok(())
+        Ok(ok != 0)
+    }
+
+    pub(crate) fn win_get_state(&self, s: &Selector) -> Result<WinState> {
+        let w = self.sel(s)?;
+        // Measured: reports through the error flag, like `WinGetPos` — the
+        // return is the state bits, and 0 is a legitimate value.
+        let (bits, code) = au3!(self, AU3_WinGetState(w.as_ptr(), EMPTY_WIDE.as_ptr()));
+        if code != 0 {
+            return Err(Error::window_not_found(s));
+        }
+        Ok(WinState::from_bits_truncate(bits))
     }
 
     pub(crate) fn win_get_pos(&self, s: &Selector) -> Result<Rect> {

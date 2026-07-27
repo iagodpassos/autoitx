@@ -2,7 +2,7 @@
 
 use crate::backend::dll::Inner;
 use crate::error::{Error, Result};
-use crate::options::{Options, ShowState, Speed};
+use crate::options::{Options, ShowState, Speed, WinState};
 use crate::{Keys, Point, Rect, Selector};
 use parking_lot::ReentrantMutexGuard;
 use std::ops::Deref;
@@ -163,7 +163,14 @@ impl AutoIt {
     }
 
     /// Brings the matching window to the foreground.
-    pub fn win_activate(&self, s: &Selector) -> Result<()> {
+    ///
+    /// Returns whether AutoIt reported success — `false` means the window was
+    /// not found, or refused to come forward. This is a return value rather
+    /// than an error because activation is routinely followed by a wait, and
+    /// the wait is the real verification; failing hard here would turn a
+    /// transient refusal into an aborted run. See
+    /// [`win_wait_activate`](Self::win_wait_activate).
+    pub fn win_activate(&self, s: &Selector) -> Result<bool> {
         self.inner.win_activate(s)
     }
 
@@ -202,18 +209,39 @@ impl AutoIt {
     }
 
     /// The process id owning the matching window.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::WindowNotFound`] if nothing matches. AutoIt signals that with
+    /// `(DWORD)-1` rather than 0, so this never returns `4294967295` as if it
+    /// were a real process id — which is exactly what a caller would then try
+    /// to terminate.
     pub fn win_get_process(&self, s: &Selector) -> Result<u32> {
         self.inner.win_get_process(s)
     }
 
     /// Shows, hides, minimises, maximises, or restores a window.
-    pub fn win_set_state(&self, s: &Selector, state: ShowState) -> Result<()> {
+    ///
+    /// Returns whether the window was found.
+    pub fn win_set_state(&self, s: &Selector, state: ShowState) -> Result<bool> {
         self.inner.win_set_state(s, state)
     }
 
-    /// Maximises a window.
-    pub fn maximize(&self, s: &Selector) -> Result<()> {
+    /// Maximises a window. Returns whether it was found.
+    pub fn maximize(&self, s: &Selector) -> Result<bool> {
         self.win_set_state(s, ShowState::Maximize)
+    }
+
+    /// Whether the window exists, is visible, enabled, active, minimised or
+    /// maximised.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::WindowNotFound`] if nothing matches. This one reports through
+    /// AutoIt's error flag rather than its return, because 0 — no flags set —
+    /// is a legitimate state.
+    pub fn win_get_state(&self, s: &Selector) -> Result<WinState> {
+        self.inner.win_get_state(s)
     }
 
     /// The window's position and size.

@@ -414,6 +414,81 @@ fn win_get_pos_trusts_the_error_flag_not_the_integer_return() {
 }
 
 #[test]
+fn win_get_process_rejects_the_minus_one_sentinel() {
+    // Regression, measured against a real desktop.
+    //
+    // `WinGetProcess` signals "no window" with `(DWORD)-1`, not 0. Returning
+    // that as a process id had teeth: `win_close_if_exists` checks `pid != 0`
+    // before terminating, so 4294967295 sailed straight through and the robot
+    // would try to kill it.
+    let h = Harness::new();
+    h.script_int(-1); // the mock casts i32 -> DWORD, giving 0xFFFFFFFF
+
+    let err = h.ai.win_get_process(&Selector::active()).unwrap_err();
+    assert!(
+        matches!(err, autoitx::Error::WindowNotFound { .. }),
+        "expected WindowNotFound, got {err:?}"
+    );
+}
+
+#[test]
+fn close_if_exists_never_tries_to_kill_the_sentinel_pid() {
+    // The failure this prevents, end to end: window exists, refuses to close,
+    // and then WinGetProcess cannot find it.
+    let h = Harness::new();
+    h.script_ints(&[
+        1,  // WinExists    -> yes
+        1,  // WinClose     -> accepted
+        0,  // WinWaitClose -> still there
+        -1, // WinGetProcess -> (DWORD)-1, no window
+    ]);
+
+    let err =
+        h.ai.win_close_if_exists(&Selector::active(), Duration::from_millis(50))
+            .unwrap_err();
+
+    assert!(
+        matches!(err, autoitx::Error::WindowNotFound { .. }),
+        "{err:?}"
+    );
+    assert!(
+        !h.call_names().contains(&"AU3_ProcessClose".to_owned()),
+        "must not have attempted a kill: {:#?}",
+        h.call_names()
+    );
+}
+
+#[test]
+fn win_get_state_reports_through_the_error_flag() {
+    // Measured: the return carries the state bits, and 0 — nothing set — is a
+    // legitimate value, so only the error flag can mean "not found".
+    let h = Harness::new();
+    h.script_int(15); // EXISTS | VISIBLE | ENABLED | ACTIVE
+
+    let state = h.ai.win_get_state(&Selector::active()).unwrap();
+    assert!(state.contains(autoitx::WinState::EXISTS));
+    assert!(state.contains(autoitx::WinState::ACTIVE));
+    assert!(!state.contains(autoitx::WinState::MINIMIZED));
+
+    h.script_error(1);
+    assert!(h.ai.win_get_state(&Selector::active()).is_err());
+}
+
+#[test]
+fn activate_and_set_state_report_whether_the_window_was_found() {
+    // Measured: both return a plain 1/0, despite AutoIt's *script* docs
+    // describing WinActivate as returning a window handle. Neither is an error
+    // — activation is normally followed by a wait, which is the real check.
+    let h = Harness::new();
+
+    h.script_ints(&[0, 1, 0, 1]);
+    assert!(!h.ai.win_activate(&Selector::active()).unwrap());
+    assert!(h.ai.win_activate(&Selector::active()).unwrap());
+    assert!(!h.ai.maximize(&Selector::active()).unwrap());
+    assert!(h.ai.maximize(&Selector::active()).unwrap());
+}
+
+#[test]
 fn wait_until_idle_gives_up_instead_of_hanging_forever() {
     let h = Harness::new();
     // Cursor 15 is the hourglass: never idle. The hand-written version of this
