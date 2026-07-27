@@ -100,7 +100,7 @@ pub mod ext {
     ///
     /// Defined in `crate::backend::macos`; re-exported here so the two
     /// platform modules sit side by side.
-    #[cfg(any(target_os = "macos", docsrs))]
+    #[cfg(target_os = "macos")]
     #[cfg_attr(docsrs, doc(cfg(target_os = "macos")))]
     pub mod macos {
         pub use crate::backend::macos::permissions::{

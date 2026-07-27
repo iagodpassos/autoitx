@@ -108,7 +108,7 @@ pub enum Error {
     /// Carries a copy-pasteable hint rather than only the fact, because without
     /// the Accessibility grant every AX call fails in a way that reads exactly
     /// like "window not found" — and chasing that costs an hour.
-    #[cfg(any(target_os = "macos", docsrs))]
+    #[cfg(target_os = "macos")]
     #[cfg_attr(docsrs, doc(cfg(target_os = "macos")))]
     #[error("{permission:?} permission not granted — {hint}")]
     PermissionDenied {

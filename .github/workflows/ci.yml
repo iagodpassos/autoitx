@@ -72,15 +72,25 @@ jobs:
       - run: cargo check --all-features
 
   docs:
-    name: docs.rs render
-    runs-on: ubuntu-latest
+    name: docs.rs render (${{ matrix.target }})
+    runs-on: macos-14
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [aarch64-apple-darwin, x86_64-pc-windows-msvc]
     steps:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@nightly
+        with:
+          targets: ${{ matrix.target }}
       - uses: Swatinem/rust-cache@v2
-      # --cfg docsrs makes both platform modules visible and enables the
-      # doc(cfg) platform badges, matching what docs.rs will publish.
-      - run: cargo doc --no-deps --all-features
+      # Once per target, matching the docs.rs metadata.
+      #
+      # A single build cannot render both platforms: `--cfg docsrs` can switch
+      # a module on, but it cannot conjure the objc2 crates onto a Linux host,
+      # because they are declared under a macOS target dependency table. So
+      # docs.rs builds each target separately and so does this.
+      - run: cargo doc --no-deps --all-features --target ${{ matrix.target }}
         env:
           RUSTDOCFLAGS: --cfg docsrs -D warnings
 
