@@ -103,9 +103,10 @@ pub fn locate(explicit: Option<&Path>) -> Result<PathBuf, LoadError> {
 pub(crate) const fn check_target() -> Result<(), LoadError> {
     if cfg!(all(windows, target_arch = "aarch64")) {
         return Err(LoadError::UnsupportedTarget {
-            reason: "AutoItX3_x64.dll is x86-64 and cannot load into an ARM64 \
-                     process. Build for x86_64-pc-windows-msvc and run under \
-                     emulation.",
+            reason: "AutoItX3_x64.dll is x86-64 and cannot load into a native \
+                     ARM64 process. Build for x86_64-pc-windows-msvc (or -gnu) \
+                     instead: Windows emulates it as x64, and the DLL loads into \
+                     that normally. Confirmed working on ARM64 Windows 11.",
         });
     }
     if cfg!(all(windows, target_pointer_width = "32")) {

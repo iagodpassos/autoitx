@@ -76,8 +76,14 @@ point the library at `AutoItX3_x64.dll`, which is searched for in this order:
 7. whatever `LoadLibraryW` finds on `PATH`
 
 If none hit, the error lists every path tried. 64-bit only: the DLL is x64, so
-32-bit targets are unsupported and Windows-on-ARM must build for
-`x86_64-pc-windows-msvc` and run under emulation.
+32-bit targets are unsupported.
+
+**Windows on ARM works** — build an x86-64 binary and let Windows emulate it.
+Confirmed on an ARM64 Windows 11 VM running a full automation flow: the
+emulated process is x64, so the x64 DLL loads into it normally. What does *not*
+work is building for `aarch64-pc-windows-msvc`, since a native ARM64 process
+cannot load an x64 DLL — `Au3::load` reports that specifically rather than as a
+generic "not found".
 
 ### macOS
 

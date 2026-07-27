@@ -54,9 +54,13 @@ pub enum LoadError {
 
     /// This build cannot host the DLL at all.
     ///
-    /// `AutoItX3_x64.dll` is x86-64. It cannot load into an ARM64 process, and
-    /// there is no ARM64 build of it. Target `x86_64-pc-windows-msvc` and run
-    /// under emulation, or wait for the native backend.
+    /// `AutoItX3_x64.dll` is x86-64, and there is no ARM64 build of it, so a
+    /// *native* ARM64 process cannot load it.
+    ///
+    /// This is not the same as "Windows on ARM does not work": build for
+    /// `x86_64-pc-windows-msvc` (or `-gnu`) and Windows emulates the process as
+    /// x64, which the DLL loads into normally. That path is confirmed working
+    /// on ARM64 Windows 11.
     #[error("{reason}")]
     UnsupportedTarget {
         /// A specific explanation, rather than a generic load failure.
