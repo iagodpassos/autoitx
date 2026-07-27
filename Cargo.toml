@@ -26,6 +26,9 @@ tracing = "0.1"
 widestring = "1.2"
 
 # macOS-only. All from the objc2 project, versioned together.
+# `libc` joins them for the parts of the process API that are POSIX rather than
+# Cocoa: signals, priorities, and the `libproc` process listing.
+libc = "0.2"
 objc2 = "0.6"
 objc2-core-foundation = "0.3"
 objc2-core-graphics = "0.3"

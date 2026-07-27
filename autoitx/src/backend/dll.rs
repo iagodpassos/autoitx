@@ -168,8 +168,8 @@ impl Inner {
         })
     }
 
-    pub(crate) const fn options(&self) -> &Options {
-        &self.options
+    pub(crate) const fn options(&self) -> Options {
+        self.options
     }
 
     /// Holds the lock for a run of calls.
@@ -520,6 +520,22 @@ impl Inner {
     pub(crate) fn mouse_get_cursor(&self) -> Result<i32> {
         let (code, _) = au3!(self, AU3_MouseGetCursor());
         Ok(code)
+    }
+
+    /// Whether the target application is ready for input.
+    ///
+    /// Windows has no way to ask an application that directly, so this reads
+    /// the cursor shape — the idiom hand-written automation uses, spelled
+    /// `cursor == 2 || cursor == 5`. An arrow or an I-beam means the
+    /// application is waiting for you; an hourglass means it is busy.
+    pub(crate) fn is_idle(&self) -> Result<bool> {
+        let cursor = self.mouse_get_cursor()?;
+        Ok(cursor == 2 || cursor == 5)
+    }
+
+    /// The clipboard's change counter.
+    pub(crate) fn clip_sequence(&self) -> Option<u32> {
+        crate::backend::win32::clipboard_sequence()
     }
 
     pub(crate) fn mouse_get_pos(&self) -> Result<Point> {

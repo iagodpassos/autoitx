@@ -19,7 +19,16 @@
 //!   `CGDisplayCreateImageForRect` returns pixels, 2× on Retina. Pixel
 //!   operations therefore take an explicit coordinate space.
 
+// The backend proper. Absent when `mock-loader` puts the DLL backend in
+// charge instead, because then there is nothing for it to be the backend of.
+#[cfg(not(feature = "mock-loader"))]
+pub(crate) mod inner;
+
+pub(crate) mod ax;
 pub(crate) mod clipboard;
 pub(crate) mod input;
 pub(crate) mod keycodes;
 pub(crate) mod permissions;
+pub(crate) mod pixel;
+pub(crate) mod process;
+pub(crate) mod window;

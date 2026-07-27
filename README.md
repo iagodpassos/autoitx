@@ -27,14 +27,33 @@ natively on macOS.
 | Windows by title / class / regex | ✅ | ✅ (Accessibility) | — |
 | Processes, `run` | ✅ | ✅ | — |
 | Pixel colour / search | ✅ | ✅ (needs Screen Recording) | — |
-| Controls | ✅ (by HWND) | ✅ (by AX element) | — |
+| Window text and class list | ✅ | ✅ (the AX tree, and its roles) | — |
+| Controls by `ClassNameNN` | ✅ (by HWND) | ❌ no HWND to address | — |
 | Cursor shape (`mouse_get_cursor`) | ✅ | ❌ no public API — use `recipes::wait_until_idle` | — |
-| Mapped network drives, status bars, `WinSetTrans` | ✅ | ❌ | — |
+| Mapped network drives, status bars, `WinSetTrans`, tooltips | ✅ | ❌ | — |
 
 Capabilities that exist on only one platform live in `ext::windows` /
 `ext::macos`. Using one from the wrong platform is a **compile error**, not a
 runtime surprise — a robot that discovers mid-run it cannot read the cursor has
 already half-completed a transaction in someone's ERP.
+
+### One thing to know before porting a shortcut
+
+`{CTRLDOWN}c{CTRLUP}` means Copy on Windows and **Control-C** on macOS, where
+Copy is Command-C. The default (`KeyMap::AsWritten`) takes the names literally,
+so a Windows shortcut does something else — loudly, rather than silently:
+
+```rust
+use autoitx::options::{KeyMap, Options};
+
+let ai = autoitx::AutoIt::builder()
+    .options(Options::default().with_key_map(KeyMap::PortableShortcuts))
+    .build()?;
+```
+
+Swap it only if every one of your `CTRL` sequences is an editing shortcut. If
+any of them means Control literally — a terminal's Ctrl-C — leave the default
+and translate those call sites by hand.
 
 For operations that both platforms can do by different means, `recipes` gives
 one portable call. `wait_until_idle` polls the cursor shape on Windows and
@@ -118,11 +137,11 @@ A Windows machine is needed only to observe real behaviour — never to compile.
 | Phase | | |
 |---|---|---|
 | 0 | Workspace, CI, cross-compilation proven | ✅ |
-| 1 | `autoitx-sys` — all 117 `AU3_*` bindings + mock DLL | |
-| 2 | Windows safe layer: `Selector`, `Keys`, `Session`, `recipes` | |
-| 3 | Windows: remaining core + `ext::windows` | |
-| 4 | macOS: permissions, clipboard, mouse, keyboard | |
-| 5 | macOS: windows and controls via Accessibility | |
+| 1 | `autoitx-sys` — all 117 `AU3_*` bindings + mock DLL | ✅ |
+| 2 | Windows safe layer: `Selector`, `Keys`, `Session`, `recipes` | ✅ |
+| 3 | Windows: remaining core + `ext::windows` | ✅ |
+| 4 | macOS: permissions, clipboard, mouse, keyboard | ✅ |
+| 5 | macOS: windows via Accessibility | ✅ |
 | 6 | `0.1.0` release | |
 | — | Native Windows backend (drops the DLL), then Linux | |
 

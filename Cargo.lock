@@ -8,6 +8,7 @@ version = "0.1.0"
 dependencies = [
  "autoitx-sys",
  "bitflags",
+ "libc",
  "libloading",
  "objc2",
  "objc2-app-kit",

@@ -19,7 +19,10 @@
 // Wired into `AutoIt` in phase 5, when the window operations land and the
 // backend can be selected as a whole. Until then these are exercised by the
 // tests at the bottom of this file, including one that drives the real cursor.
-#![allow(dead_code, reason = "wired into AutoIt in phase 5")]
+#![allow(
+    dead_code,
+    reason = "unused when the mock-loader feature selects the DLL backend instead"
+)]
 
 use super::keycodes::{self, KeyCode};
 use crate::keys::{Modifier, Token};
@@ -167,6 +170,16 @@ fn modifier_code(name: &str, map: KeyMap) -> Option<KeyCode> {
     })
 }
 
+/// Whether a modifier set makes this a key *equivalent* rather than typing.
+///
+/// Shift is deliberately not in the list: holding it is how a capital letter or
+/// a `!` is typed, and those still want the Unicode path.
+fn is_shortcut(flags: CGEventFlags) -> bool {
+    flags.intersects(
+        CGEventFlags::MaskCommand | CGEventFlags::MaskControl | CGEventFlags::MaskAlternate,
+    )
+}
+
 /// Sends a key sequence.
 ///
 /// # Errors
@@ -201,7 +214,25 @@ pub(crate) fn send(keys: &Keys, options: &Options) -> crate::Result<()> {
                 for code in &pending {
                     held.press(*code);
                 }
-                post_char(*c, held.flags());
+                let flags = held.flags();
+
+                // Two different mechanisms, and which one applies is decided
+                // by the modifiers, not by the character. See
+                // [`keycodes::ansi`] for the measurement behind this.
+                if is_shortcut(flags) {
+                    let Some(code) = keycodes::ansi(*c) else {
+                        return Err(crate::Error::UnsupportedKey {
+                            key: format!("{c} as part of a shortcut"),
+                            platform: "macOS",
+                        });
+                    };
+                    post_key(code, true, flags);
+                    std::thread::sleep(options.send_key_down_delay);
+                    post_key(code, false, flags);
+                } else {
+                    post_char(*c, flags);
+                }
+
                 for code in std::mem::take(&mut pending) {
                     held.release(code);
                 }

@@ -34,6 +34,7 @@ tracing = { workspace = true, optional = true }
 # Apple's own frameworks through the objc2 project, rather than a third-party
 # automation crate. The trade is deliberate: the dependency risk is objc2 plus
 # Apple, and every behavioural decision stays here where it can be explained.
+libc = { workspace = true }
 objc2 = { workspace = true }
 objc2-core-foundation = { workspace = true }
 objc2-core-graphics = { workspace = true }

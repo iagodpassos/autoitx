@@ -233,6 +233,27 @@ pub struct Options {
     pub key_map: KeyMap,
 }
 
+impl Options {
+    /// The defaults, with a different [`KeyMap`].
+    ///
+    /// `Options` is `#[non_exhaustive]`, so it cannot be built with struct
+    /// update syntax from outside this crate — and the key map is the one field
+    /// a macOS user reaches for straight away.
+    ///
+    /// ```
+    /// use autoitx::options::{KeyMap, Options};
+    ///
+    /// // `{CTRLDOWN}c{CTRLUP}` now means Copy on macOS, as it does on Windows.
+    /// let o = Options::default().with_key_map(KeyMap::PortableShortcuts);
+    /// assert_eq!(o.key_map, KeyMap::PortableShortcuts);
+    /// ```
+    #[must_use]
+    pub const fn with_key_map(mut self, key_map: KeyMap) -> Self {
+        self.key_map = key_map;
+        self
+    }
+}
+
 impl Default for Options {
     /// AutoIt's own defaults, as installed by `AU3_Init`.
     fn default() -> Self {
@@ -257,9 +278,197 @@ impl Default for Options {
     }
 }
 
+/// Reads or writes one option by AutoIt's own name.
+///
+/// This is what the macOS backend uses to emulate `AutoItSetOption`, whose
+/// contract has two halves: it returns the *previous* value, and passing
+/// [`AU3_INTDEFAULT`](autoitx_sys::AU3_INTDEFAULT) reads without writing. Both
+/// are relied on — the second is how `get_option` and the defaults-parity test
+/// work.
+///
+/// Names are matched case-insensitively, as AutoIt does.
+///
+/// # Errors
+///
+/// [`Error::Platform`](crate::Error::Platform) for a name this backend does not
+/// model. Reported rather than ignored: quietly accepting a misspelled
+/// `"SendKeyDelay"` would leave automation timing-dependent for no visible
+/// reason.
+#[cfg(target_os = "macos")]
+pub(crate) fn apply_named(
+    options: &mut Options,
+    name: &str,
+    value: i32,
+    read_only: bool,
+) -> crate::Result<i32> {
+    /// Reads, and conditionally writes, a millisecond duration.
+    fn millis(field: &mut Duration, value: i32, read_only: bool) -> i32 {
+        let previous = field.as_millis() as i32;
+        if !read_only && value >= 0 {
+            *field = Duration::from_millis(value as u64);
+        }
+        previous
+    }
+
+    /// Reads, and conditionally writes, a boolean stored as 0/1.
+    fn flag(field: &mut bool, value: i32, read_only: bool) -> i32 {
+        let previous = i32::from(*field);
+        if !read_only {
+            *field = value != 0;
+        }
+        previous
+    }
+
+    /// Reads, and conditionally writes, a coordinate mode.
+    fn coords(field: &mut CoordMode, value: i32, read_only: bool) -> i32 {
+        let previous = *field as i32;
+        if !read_only {
+            *field = match value {
+                0 => CoordMode::ActiveWindow,
+                2 => CoordMode::Client,
+                _ => CoordMode::Screen,
+            };
+        }
+        previous
+    }
+
+    let previous = match name.to_ascii_lowercase().as_str() {
+        "mousecoordmode" => coords(&mut options.mouse_coord_mode, value, read_only),
+        "pixelcoordmode" => coords(&mut options.pixel_coord_mode, value, read_only),
+        "caretcoordmode" => coords(&mut options.caret_coord_mode, value, read_only),
+
+        // AutoIt folds two settings into this one number: the magnitude picks
+        // the comparison, and a negative sign makes it case-insensitive.
+        "wintitlematchmode" => {
+            let sign = if options.win_title_match_case_insensitive {
+                -1
+            } else {
+                1
+            };
+            let previous = options.win_title_match_mode as i32 * sign;
+            if !read_only {
+                options.win_title_match_case_insensitive = value < 0;
+                options.win_title_match_mode = match value.abs() {
+                    2 => TitleMatchMode::Substring,
+                    3 => TitleMatchMode::Exact,
+                    4 => TitleMatchMode::Advanced,
+                    _ => TitleMatchMode::StartsWith,
+                };
+            }
+            previous
+        }
+
+        "wintextmatchmode" => {
+            let previous = options.win_text_match_mode as i32;
+            if !read_only {
+                options.win_text_match_mode = if value == 2 {
+                    TextMatchMode::Quick
+                } else {
+                    TextMatchMode::Complete
+                };
+            }
+            previous
+        }
+
+        "windetecthiddentext" => flag(&mut options.win_detect_hidden_text, value, read_only),
+        "winsearchchildren" => flag(&mut options.win_search_children, value, read_only),
+        "sendcapslockmode" => flag(&mut options.send_capslock_mode, value, read_only),
+
+        "sendkeydelay" => millis(&mut options.send_key_delay, value, read_only),
+        "sendkeydowndelay" => millis(&mut options.send_key_down_delay, value, read_only),
+        "mouseclickdelay" => millis(&mut options.mouse_click_delay, value, read_only),
+        "mouseclickdowndelay" => millis(&mut options.mouse_click_down_delay, value, read_only),
+        "mouseclickdragdelay" => millis(&mut options.mouse_click_drag_delay, value, read_only),
+        "winwaitdelay" => millis(&mut options.win_wait_delay, value, read_only),
+
+        _ => {
+            return Err(crate::Error::Platform {
+                operation: "set an option it does not model (see `Options` for the ones it does)",
+                platform: "the macOS backend",
+            });
+        }
+    };
+    Ok(previous)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn the_read_only_sentinel_reports_every_option_without_changing_any() {
+        // The mechanism behind `get_option`, and behind the parity test that
+        // checks `Options::default` against what AutoIt itself installs.
+        let mut o = Options::default();
+        let before = o;
+        for name in [
+            "MouseCoordMode",
+            "PixelCoordMode",
+            "CaretCoordMode",
+            "WinTitleMatchMode",
+            "WinTextMatchMode",
+            "WinDetectHiddenText",
+            "WinSearchChildren",
+            "SendCapslockMode",
+            "SendKeyDelay",
+            "SendKeyDownDelay",
+            "MouseClickDelay",
+            "MouseClickDownDelay",
+            "MouseClickDragDelay",
+            "WinWaitDelay",
+        ] {
+            apply_named(&mut o, name, autoitx_sys::AU3_INTDEFAULT, true)
+                .unwrap_or_else(|e| panic!("{name}: {e}"));
+        }
+        assert_eq!(o, before, "a read-only call changed something");
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn a_negative_title_match_mode_means_case_insensitive() {
+        // AutoIt packs two settings into one number, and automation in the wild
+        // uses the negative form. Losing the sign would silently make matching
+        // case-sensitive again.
+        let mut o = Options::default();
+        apply_named(&mut o, "WinTitleMatchMode", -2, false).expect("known option");
+        assert_eq!(o.win_title_match_mode, TitleMatchMode::Substring);
+        assert!(o.win_title_match_case_insensitive);
+
+        // And it round-trips: reading gives back the negative number.
+        let read = apply_named(
+            &mut o,
+            "WinTitleMatchMode",
+            autoitx_sys::AU3_INTDEFAULT,
+            true,
+        )
+        .expect("known option");
+        assert_eq!(read, -2);
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn names_are_matched_case_insensitively_like_autoit() {
+        let mut o = Options::default();
+        assert_eq!(
+            apply_named(&mut o, "sendkeydelay", 20, false).expect("known option"),
+            5
+        );
+        assert_eq!(o.send_key_delay, Duration::from_millis(20));
+        assert_eq!(
+            apply_named(&mut o, "SENDKEYDELAY", 30, false).expect("known option"),
+            20
+        );
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn an_unmodelled_option_is_an_error_rather_than_a_silent_no_op() {
+        let mut o = Options::default();
+        assert!(apply_named(&mut o, "TrayIconDebug", 1, false).is_err());
+        // Including a near miss, which is the case that actually happens.
+        assert!(apply_named(&mut o, "SendKeyDelays", 1, false).is_err());
+    }
 
     #[test]
     fn defaults_match_the_autoit_table() {

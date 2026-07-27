@@ -20,6 +20,10 @@ check-all: fmt-check msrv
     cargo clippy --workspace --all-targets -- -D warnings
     cargo clippy --workspace --all-targets --all-features -- -D warnings
     cargo clippy --target {{WIN}} -p autoitx-sys -p autoitx --all-features -- -D warnings
+    # Both backends. On macOS `--all-features` turns on `mock-loader`, which
+    # puts the DLL backend in charge — so without this line the native backend
+    # would never be tested here at all.
+    cargo test --workspace
     cargo test --workspace --all-features
 
 # Language features are not gated by `rust-version`, so only a real 1.85

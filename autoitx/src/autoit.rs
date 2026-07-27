@@ -1,9 +1,19 @@
 //! The automation handle.
 
-use crate::backend::dll::{ControlState, Inner};
+// One backend or the other, never both. `mock-loader` deliberately wins on
+// macOS: it is how the DLL marshalling gets tested without a Windows machine.
+#[cfg(any(windows, feature = "mock-loader"))]
+use crate::backend::dll::ControlState;
+#[cfg(any(windows, feature = "mock-loader"))]
+use crate::backend::dll::Inner;
+#[cfg(all(target_os = "macos", not(feature = "mock-loader")))]
+use crate::backend::macos::inner::Inner;
 use crate::error::{Error, Result};
 use crate::options::{Options, ShowState, Speed, WinState};
-use crate::{Control, Keys, Point, Rect, Selector, Size};
+use crate::{Keys, Point, Rect, Selector, Size};
+// Controls are addressed by HWND, which only the DLL backend has.
+#[cfg(any(windows, feature = "mock-loader"))]
+use crate::Control;
 use parking_lot::ReentrantMutexGuard;
 use std::ops::Deref;
 use std::path::PathBuf;
@@ -43,7 +53,7 @@ pub struct AutoIt {
 impl std::fmt::Debug for AutoIt {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("AutoIt")
-            .field("options", self.inner.options())
+            .field("options", &self.inner.options())
             .finish_non_exhaustive()
     }
 }
@@ -67,7 +77,7 @@ impl AutoIt {
 
     /// The option table in force.
     #[must_use]
-    pub fn options(&self) -> &Options {
+    pub fn options(&self) -> Options {
         self.inner.options()
     }
 
@@ -169,14 +179,14 @@ impl AutoIt {
     /// collide with the real value, and a write that restores what was already
     /// there is invisible.
     ///
-    /// Returns `None` where the counter is unavailable — off Windows, and in
-    /// the rare case `user32` cannot be opened.
+    /// Returns `None` where the counter is unavailable — on Windows, in the
+    /// rare case `user32` cannot be opened.
     ///
     /// Prefer [`recipes::read_screen_text`](crate::recipes::read_screen_text),
     /// which uses this correctly.
     #[must_use]
     pub fn clip_sequence(&self) -> Option<u32> {
-        crate::backend::win32::clipboard_sequence()
+        self.inner.clip_sequence()
     }
 
     // -- Mouse -------------------------------------------------------------
@@ -510,11 +520,15 @@ impl AutoIt {
         self.inner.win_move(s, r)
     }
 
+    #[cfg(any(windows, feature = "mock-loader", docsrs))]
+    #[cfg_attr(docsrs, doc(cfg(windows)))]
     /// Changes a window's title. Returns whether it was found.
     pub fn win_set_title(&self, s: &Selector, title: &str) -> Result<bool> {
         self.inner.win_set_title(s, title)
     }
 
+    #[cfg(any(windows, feature = "mock-loader", docsrs))]
+    #[cfg_attr(docsrs, doc(cfg(windows)))]
     /// Pins a window above the others, or unpins it.
     pub fn win_set_on_top(&self, s: &Selector, on_top: bool) -> Result<bool> {
         self.inner.win_set_on_top(s, on_top)
@@ -544,16 +558,22 @@ impl AutoIt {
         self.inner.win_get_client_size(s)
     }
 
+    #[cfg(any(windows, feature = "mock-loader", docsrs))]
+    #[cfg_attr(docsrs, doc(cfg(windows)))]
     /// Minimises every window, as Win+D does.
     pub fn win_minimize_all(&self) -> Result<()> {
         self.inner.win_minimize_all(false)
     }
 
+    #[cfg(any(windows, feature = "mock-loader", docsrs))]
+    #[cfg_attr(docsrs, doc(cfg(windows)))]
     /// Undoes [`win_minimize_all`](Self::win_minimize_all).
     pub fn win_minimize_all_undo(&self) -> Result<()> {
         self.inner.win_minimize_all(true)
     }
 
+    #[cfg(any(windows, feature = "mock-loader", docsrs))]
+    #[cfg_attr(docsrs, doc(cfg(windows)))]
     /// Shows a tooltip at a screen position, or at the cursor.
     ///
     /// An empty string dismisses it. Handy for showing what a long-running
@@ -654,6 +674,8 @@ impl AutoIt {
         &self.inner
     }
 
+    #[cfg(any(windows, feature = "mock-loader", docsrs))]
+    #[cfg_attr(docsrs, doc(cfg(windows)))]
     /// The raw `AU3_*` function table.
     ///
     /// An escape hatch for the parts of AutoItX this crate has not wrapped, and
@@ -691,6 +713,8 @@ impl AutoIt {
     // are why automation built that way pins a screen resolution and refuses to
     // start when it changes.
 
+    #[cfg(any(windows, feature = "mock-loader", docsrs))]
+    #[cfg_attr(docsrs, doc(cfg(windows)))]
     /// Clicks a control, optionally at a point inside it.
     ///
     /// Returns whether the control was found. `at` defaults to the centre.
@@ -706,6 +730,8 @@ impl AutoIt {
             .control_click(window, control, button.as_str(), clicks, at)
     }
 
+    #[cfg(any(windows, feature = "mock-loader", docsrs))]
+    #[cfg_attr(docsrs, doc(cfg(windows)))]
     /// Sends keystrokes straight to a control.
     ///
     /// Unlike [`send`](Self::send), this does not require the window to be
@@ -721,6 +747,8 @@ impl AutoIt {
             .control_send(window, control, keys.as_ref(), false)
     }
 
+    #[cfg(any(windows, feature = "mock-loader", docsrs))]
+    #[cfg_attr(docsrs, doc(cfg(windows)))]
     /// Sends keystrokes literally, with no `{}!+^#` interpretation.
     pub fn control_send_raw(
         &self,
@@ -732,6 +760,8 @@ impl AutoIt {
             .control_send(window, control, &Keys::raw_unchecked(text.to_owned()), true)
     }
 
+    #[cfg(any(windows, feature = "mock-loader", docsrs))]
+    #[cfg_attr(docsrs, doc(cfg(windows)))]
     /// Replaces a control's text outright.
     ///
     /// Faster and more reliable than typing into it: no keystrokes, no
@@ -745,6 +775,8 @@ impl AutoIt {
         self.inner.control_set_text(window, control, text)
     }
 
+    #[cfg(any(windows, feature = "mock-loader", docsrs))]
+    #[cfg_attr(docsrs, doc(cfg(windows)))]
     /// Reads a control's text.
     ///
     /// The direct answer to what automation usually gets by selecting, copying
@@ -753,6 +785,8 @@ impl AutoIt {
         self.inner.control_get_text(window, control)
     }
 
+    #[cfg(any(windows, feature = "mock-loader", docsrs))]
+    #[cfg_attr(docsrs, doc(cfg(windows)))]
     /// The `ClassnameNN` of whichever control has focus.
     ///
     /// Useful for discovering what a window contains while it is on screen.
@@ -760,6 +794,8 @@ impl AutoIt {
         self.inner.control_get_focus(window)
     }
 
+    #[cfg(any(windows, feature = "mock-loader", docsrs))]
+    #[cfg_attr(docsrs, doc(cfg(windows)))]
     /// A control's position and size, relative to its window.
     ///
     /// # Errors
@@ -769,6 +805,8 @@ impl AutoIt {
         self.inner.control_get_pos(window, control)
     }
 
+    #[cfg(any(windows, feature = "mock-loader", docsrs))]
+    #[cfg_attr(docsrs, doc(cfg(windows)))]
     /// A control's window handle.
     ///
     /// # Errors
@@ -778,41 +816,55 @@ impl AutoIt {
         self.inner.control_get_handle(window, control)
     }
 
+    #[cfg(any(windows, feature = "mock-loader", docsrs))]
+    #[cfg_attr(docsrs, doc(cfg(windows)))]
     /// Moves and resizes a control within its window.
     pub fn control_move(&self, window: &Selector, control: &Control, r: Rect) -> Result<bool> {
         self.inner.control_move(window, control, r)
     }
 
+    #[cfg(any(windows, feature = "mock-loader", docsrs))]
+    #[cfg_attr(docsrs, doc(cfg(windows)))]
     /// Gives a control keyboard focus.
     pub fn control_focus(&self, window: &Selector, control: &Control) -> Result<bool> {
         self.inner
             .control_set_state(window, control, ControlState::Focus)
     }
 
+    #[cfg(any(windows, feature = "mock-loader", docsrs))]
+    #[cfg_attr(docsrs, doc(cfg(windows)))]
     /// Enables a control for input.
     pub fn control_enable(&self, window: &Selector, control: &Control) -> Result<bool> {
         self.inner
             .control_set_state(window, control, ControlState::Enable)
     }
 
+    #[cfg(any(windows, feature = "mock-loader", docsrs))]
+    #[cfg_attr(docsrs, doc(cfg(windows)))]
     /// Greys a control out.
     pub fn control_disable(&self, window: &Selector, control: &Control) -> Result<bool> {
         self.inner
             .control_set_state(window, control, ControlState::Disable)
     }
 
+    #[cfg(any(windows, feature = "mock-loader", docsrs))]
+    #[cfg_attr(docsrs, doc(cfg(windows)))]
     /// Shows a hidden control.
     pub fn control_show(&self, window: &Selector, control: &Control) -> Result<bool> {
         self.inner
             .control_set_state(window, control, ControlState::Show)
     }
 
+    #[cfg(any(windows, feature = "mock-loader", docsrs))]
+    #[cfg_attr(docsrs, doc(cfg(windows)))]
     /// Hides a control.
     pub fn control_hide(&self, window: &Selector, control: &Control) -> Result<bool> {
         self.inner
             .control_set_state(window, control, ControlState::Hide)
     }
 
+    #[cfg(any(windows, feature = "mock-loader", docsrs))]
+    #[cfg_attr(docsrs, doc(cfg(windows)))]
     /// Runs one of AutoIt's control commands.
     ///
     /// The catch-all for widget-specific operations — `"IsChecked"`,
@@ -829,6 +881,8 @@ impl AutoIt {
         self.inner.control_command(window, control, command, extra)
     }
 
+    #[cfg(any(windows, feature = "mock-loader", docsrs))]
+    #[cfg_attr(docsrs, doc(cfg(windows)))]
     /// Runs one of AutoIt's list-view commands, e.g. `"GetItemCount"`.
     pub fn control_list_view(
         &self,
@@ -842,6 +896,8 @@ impl AutoIt {
             .control_list_view(window, control, command, extra1, extra2)
     }
 
+    #[cfg(any(windows, feature = "mock-loader", docsrs))]
+    #[cfg_attr(docsrs, doc(cfg(windows)))]
     /// Runs one of AutoIt's tree-view commands, e.g. `"Expand"`.
     pub fn control_tree_view(
         &self,
@@ -868,6 +924,8 @@ impl AutoIt {
         ))
     }
 
+    #[cfg(any(windows, feature = "mock-loader", docsrs))]
+    #[cfg_attr(docsrs, doc(cfg(windows)))]
     /// AutoIt's error flag, as left by the most recent call **on this thread**.
     ///
     /// Only meaningful immediately after a [`raw`](Self::raw) call, under the
@@ -976,7 +1034,16 @@ impl AutoItBuilder {
     ///
     /// [`Error::Load`] if it cannot be found or opened.
     pub fn build(self) -> Result<AutoIt> {
+        #[cfg(any(windows, feature = "mock-loader"))]
         let inner = Inner::load(self.dll_path.as_deref(), self.options, self.max_chars)?;
+
+        // The macOS backend has no library to find and no strings to marshal,
+        // so `dll_path` and `max_string_chars` have nothing to act on. They stay
+        // on the builder rather than becoming compile errors: a flow configured
+        // once should build for both targets.
+        #[cfg(all(target_os = "macos", not(feature = "mock-loader")))]
+        let inner = Inner::load(self.options)?;
+
         Ok(AutoIt {
             inner: Arc::new(inner),
         })

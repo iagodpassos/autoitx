@@ -60,6 +60,11 @@ mod backend;
 #[doc(hidden)]
 pub mod ext_windows;
 
+// Controls are addressed by Win32 class-and-instance, and every method that
+// takes one lives on the DLL backend. Gating the type as well as the methods
+// means a macOS build fails on the `Control` rather than on the call — one
+// error at the source instead of one per call site.
+#[cfg(any(windows, feature = "mock-loader", docsrs))]
 pub mod control;
 pub mod error;
 pub mod geometry;
@@ -67,14 +72,13 @@ pub mod keys;
 pub mod options;
 pub mod selector;
 
-#[cfg(any(windows, feature = "mock-loader", docsrs))]
-#[cfg_attr(docsrs, doc(cfg(any(windows, feature = "mock-loader"))))]
+#[cfg(any(windows, target_os = "macos", feature = "mock-loader", docsrs))]
 pub mod autoit;
 
-#[cfg(any(windows, feature = "mock-loader", docsrs))]
-#[cfg_attr(docsrs, doc(cfg(any(windows, feature = "mock-loader"))))]
+#[cfg(any(windows, target_os = "macos", feature = "mock-loader", docsrs))]
 pub use autoit::{AutoIt, AutoItBuilder, MouseButton, Session};
 
+#[cfg(any(windows, feature = "mock-loader", docsrs))]
 pub use control::Control;
 pub use error::{Error, Result};
 pub use geometry::{PixelCoordSpace, Point, Rect, Size};
@@ -106,6 +110,31 @@ pub mod ext {
         pub use crate::backend::macos::permissions::{
             Permission, PermissionStatus, check, request,
         };
+
+        /// Whether an application is answering, rather than beachballing.
+        ///
+        /// The macOS half of
+        /// [`recipes::wait_until_idle`](crate::recipes::wait_until_idle), and
+        /// exposed on its own because it answers a question Windows cannot:
+        /// *this* application is busy, as opposed to "the pointer looks busy".
+        ///
+        /// Asks the application for an accessibility attribute with `timeout`
+        /// to answer in. A process that is stopped, deadlocked, or churning
+        /// inside a synchronous call does not answer and reads as `false`.
+        ///
+        /// ```no_run
+        /// # use std::time::Duration;
+        /// use autoitx::ext::macos;
+        ///
+        /// # let pid = 0;
+        /// if !macos::is_app_responsive(pid, Duration::from_millis(500)) {
+        ///     // Do not send keystrokes into an application that is not reading.
+        /// }
+        /// ```
+        #[must_use]
+        pub fn is_app_responsive(pid: i32, timeout: std::time::Duration) -> bool {
+            crate::backend::macos::window::is_app_responsive(pid, timeout)
+        }
     }
 }
 
@@ -116,6 +145,5 @@ pub mod ext {
 /// with whatever primitive is right there. This is what keeps `#[cfg]` out of
 /// business logic even though the underlying capabilities differ.
 ///
-#[cfg(any(windows, feature = "mock-loader", docsrs))]
-#[cfg_attr(docsrs, doc(cfg(any(windows, feature = "mock-loader"))))]
+#[cfg(any(windows, target_os = "macos", feature = "mock-loader", docsrs))]
 pub mod recipes;

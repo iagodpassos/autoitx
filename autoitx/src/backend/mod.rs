@@ -1,13 +1,15 @@
 //! Platform backends.
 //!
-//! Today there is one: [`dll`], which calls into the AutoItX3 DLL. It is gated
-//! on `windows` or the `mock-loader` feature, because those are the two places
-//! a compatible library exists — the real DLL, and this project's test mock.
+//! Two, chosen by `cfg`, with the same method surface:
 //!
-//! The macOS backend (Accessibility, CGEvent, NSPasteboard) lands in a later
-//! phase. A shared trait will be introduced then, when there are two
-//! implementations to abstract over — one implementation behind a trait is
-//! speculation, not design.
+//! - [`dll`] calls into the AutoItX3 DLL. Selected on Windows, and on any
+//!   platform when the `mock-loader` feature is on — that is how the DLL
+//!   marshalling gets tested from a Mac.
+//! - [`macos`] is a native implementation over Apple's own frameworks.
+//!
+//! There is no shared trait. Both are `pub(crate)` and only one exists in any
+//! given build, so a trait would buy dynamic dispatch nobody wants and hide
+//! which one is in play.
 
 #[cfg(any(windows, feature = "mock-loader", docsrs))]
 pub(crate) mod dll;

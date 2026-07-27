@@ -16,7 +16,10 @@
 //! naming the key — see [`KeyMap`](crate::options::KeyMap) for the shortcut
 //! translation that *is* available.
 
-#![allow(dead_code, reason = "wired into AutoIt in phase 5")]
+#![allow(
+    dead_code,
+    reason = "unused when the mock-loader feature selects the DLL backend instead"
+)]
 
 /// A macOS virtual key code.
 pub(crate) type KeyCode = u16;
@@ -109,6 +112,87 @@ const TABLE: &[(&str, KeyCode)] = &[
     ("VOLUME_DOWN", 0x49),
     ("VOLUME_MUTE", 0x4A),
 ];
+
+/// The ANSI key code for a character, for shortcuts only.
+///
+/// # Why shortcuts cannot go through the Unicode path
+///
+/// Ordinary characters are typed with `CGEventKeyboardSetUnicodeString`, which
+/// is layout-independent and can produce anything — see the module docs. That
+/// stops working the moment a command modifier is held: macOS resolves a key
+/// *equivalent* from the event's virtual key code, and an event carrying key
+/// code 0 with a Unicode string attached is not one it recognises.
+///
+/// Measured: `{CTRLDOWN}a{CTRLUP}` under
+/// [`KeyMap::PortableShortcuts`](crate::options::KeyMap) posted a well-formed
+/// Command-flagged event that TextEdit ignored entirely — nothing selected,
+/// and no "a" typed either. Sending key code `kVK_ANSI_A` with the same flag
+/// selects the document.
+///
+/// # The layout caveat
+///
+/// These are the ANSI *positions*. On a layout where the letters sit
+/// elsewhere, `Cmd+A` here presses the key that is where A is on a US
+/// keyboard. That matches how macOS itself binds key equivalents, and it is
+/// the only option available: the alternative needs `UCKeyTranslate` against
+/// the live layout, which would still be ambiguous for any character reachable
+/// from more than one key.
+#[must_use]
+pub(crate) fn ansi(c: char) -> Option<KeyCode> {
+    // Apple's `kVK_ANSI_*` constants. Not alphabetical, not sequential: these
+    // are physical positions on the original Apple keyboard.
+    Some(match c.to_ascii_lowercase() {
+        'a' => 0x00,
+        's' => 0x01,
+        'd' => 0x02,
+        'f' => 0x03,
+        'h' => 0x04,
+        'g' => 0x05,
+        'z' => 0x06,
+        'x' => 0x07,
+        'c' => 0x08,
+        'v' => 0x09,
+        'b' => 0x0B,
+        'q' => 0x0C,
+        'w' => 0x0D,
+        'e' => 0x0E,
+        'r' => 0x0F,
+        'y' => 0x10,
+        't' => 0x11,
+        '1' => 0x12,
+        '2' => 0x13,
+        '3' => 0x14,
+        '4' => 0x15,
+        '6' => 0x16,
+        '5' => 0x17,
+        '=' => 0x18,
+        '9' => 0x19,
+        '7' => 0x1A,
+        '-' => 0x1B,
+        '8' => 0x1C,
+        '0' => 0x1D,
+        ']' => 0x1E,
+        'o' => 0x1F,
+        'u' => 0x20,
+        '[' => 0x21,
+        'i' => 0x22,
+        'p' => 0x23,
+        'l' => 0x25,
+        'j' => 0x26,
+        '\'' => 0x27,
+        'k' => 0x28,
+        ';' => 0x29,
+        '\\' => 0x2A,
+        ',' => 0x2B,
+        '/' => 0x2C,
+        'n' => 0x2D,
+        'm' => 0x2E,
+        '.' => 0x2F,
+        '`' => 0x32,
+        ' ' => 0x31,
+        _ => return None,
+    })
+}
 
 /// The virtual key code for an AutoIt key name, or `None` if macOS has no such
 /// key.
@@ -212,6 +296,29 @@ mod tests {
         }
         // And an ordinary key is not one.
         assert!(!is_modifier(lookup("TAB").unwrap()));
+    }
+
+    #[test]
+    fn the_shortcut_letters_automation_uses_have_ansi_codes() {
+        // Copy, paste, cut, select-all, save, find, undo, redo, and the
+        // browser/devtools shortcuts the real flows send.
+        for c in "acvxszfyjnptw0123456789".chars() {
+            assert!(ansi(c).is_some(), "{c} has no ANSI key code");
+        }
+        // Case does not matter: the shift flag carries that.
+        assert_eq!(ansi('A'), ansi('a'));
+        assert_eq!(ansi('A'), Some(0x00));
+        assert_eq!(ansi('c'), Some(0x08));
+        assert_eq!(ansi('v'), Some(0x09));
+    }
+
+    #[test]
+    fn a_character_with_no_ansi_position_reports_absence() {
+        // There is no key for these, so a shortcut naming one has to fail
+        // rather than press something adjacent.
+        for c in ['ç', 'ã', '€', '→'] {
+            assert!(ansi(c).is_none(), "{c} should have no ANSI code");
+        }
     }
 
     #[test]

@@ -51,14 +51,15 @@ pub fn click_at_offset(ai: &AutoIt, window: &Selector, offset: Point) -> Result<
 
 /// Waits until the target application is ready for input.
 ///
-/// On this backend that means polling the system cursor until it is an arrow or
-/// an I-beam — the idiom AutoIt automation writes by hand as
-/// `cursor == 2 || cursor == 5`, here with a timeout, which the hand-written
-/// version invariably lacks.
+/// The mechanism is where the two platforms part company:
 ///
-/// The native macOS backend will implement this by probing the Accessibility
-/// messaging timeout instead, which measures responsiveness directly rather
-/// than inferring it from what the cursor looks like.
+/// | | how |
+/// |---|---|
+/// | Windows | polls the system cursor until it is an arrow or an I-beam — the idiom automation writes by hand as `cursor == 2 \|\| cursor == 5`, here with the timeout that version invariably lacks |
+/// | macOS | asks the frontmost application for an accessibility attribute with a short messaging timeout; a busy application does not answer in time |
+///
+/// The macOS version measures responsiveness directly. Windows has to infer it
+/// from what the pointer looks like, because it has no way to ask.
 ///
 /// # Errors
 ///
@@ -66,12 +67,7 @@ pub fn click_at_offset(ai: &AutoIt, window: &Selector, offset: Point) -> Result<
 pub fn wait_until_idle(ai: &AutoIt, timeout: Duration) -> Result<()> {
     const POLL: Duration = Duration::from_millis(250);
 
-    ai.wait_until("wait_until_idle", timeout, POLL, || {
-        let cursor = ai.inner().mouse_get_cursor()?;
-        // 2 = arrow, 5 = I-beam. Anything else — hourglass, app-starting —
-        // means the application is still working.
-        Ok(cursor == 2 || cursor == 5)
-    })
+    ai.wait_until("wait_until_idle", timeout, POLL, || ai.inner().is_idle())
 }
 
 /// Reads the focused field or selection by copying it, without the usual race.

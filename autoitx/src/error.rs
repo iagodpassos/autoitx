@@ -41,6 +41,7 @@ pub enum Error {
     /// Named separately from [`WindowNotFound`](Self::WindowNotFound) because
     /// the two have different fixes: a wrong window selector versus a wrong
     /// control identifier.
+    #[cfg(any(windows, feature = "mock-loader", docsrs))]
     #[error("window {selector} has no control matching {control}")]
     ControlNotFound {
         /// The window that was found.
@@ -128,6 +129,19 @@ pub enum Error {
         /// The key name, as written.
         key: String,
         /// Which platform lacks it.
+        platform: &'static str,
+    },
+
+    /// A platform call did not succeed.
+    ///
+    /// The OS refused, or could not answer. Distinct from a *capability* gap,
+    /// which is a compile error rather than a variant here: this is the same
+    /// operation the platform normally performs, failing this time.
+    #[error("{platform} could not {operation}")]
+    Platform {
+        /// What was attempted, as a verb phrase.
+        operation: &'static str,
+        /// Which platform refused.
         platform: &'static str,
     },
 
