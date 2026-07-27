@@ -16,6 +16,12 @@ default:
 # Runs clippy with no features as well as all: the platform and mock-loader
 # gates mean code can be dead in one configuration and live in another, and
 # `-D warnings` in CI turns that into a failure.
+#
+# `RUSTFLAGS` matches the CI workflow deliberately. Without it `cargo test`
+# only warns about dead code that CI rejects, and this gate passes on something
+# that then fails on push — which is exactly what it happened to do.
+export RUSTFLAGS := "-D warnings"
+
 check-all: fmt-check msrv
     cargo clippy --workspace --all-targets -- -D warnings
     cargo clippy --workspace --all-targets --all-features -- -D warnings

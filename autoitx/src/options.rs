@@ -294,7 +294,9 @@ impl Default for Options {
 /// model. Reported rather than ignored: quietly accepting a misspelled
 /// `"SendKeyDelay"` would leave automation timing-dependent for no visible
 /// reason.
-#[cfg(target_os = "macos")]
+// Reachable only from the native backend. With `mock-loader` on, even a macOS
+// build runs the DLL and AutoIt keeps its own option table.
+#[cfg(all(target_os = "macos", not(feature = "mock-loader")))]
 pub(crate) fn apply_named(
     options: &mut Options,
     name: &str,
@@ -395,7 +397,7 @@ pub(crate) fn apply_named(
 mod tests {
     use super::*;
 
-    #[cfg(target_os = "macos")]
+    #[cfg(all(target_os = "macos", not(feature = "mock-loader")))]
     #[test]
     fn the_read_only_sentinel_reports_every_option_without_changing_any() {
         // The mechanism behind `get_option`, and behind the parity test that
@@ -424,7 +426,7 @@ mod tests {
         assert_eq!(o, before, "a read-only call changed something");
     }
 
-    #[cfg(target_os = "macos")]
+    #[cfg(all(target_os = "macos", not(feature = "mock-loader")))]
     #[test]
     fn a_negative_title_match_mode_means_case_insensitive() {
         // AutoIt packs two settings into one number, and automation in the wild
@@ -446,7 +448,7 @@ mod tests {
         assert_eq!(read, -2);
     }
 
-    #[cfg(target_os = "macos")]
+    #[cfg(all(target_os = "macos", not(feature = "mock-loader")))]
     #[test]
     fn names_are_matched_case_insensitively_like_autoit() {
         let mut o = Options::default();
@@ -461,7 +463,7 @@ mod tests {
         );
     }
 
-    #[cfg(target_os = "macos")]
+    #[cfg(all(target_os = "macos", not(feature = "mock-loader")))]
     #[test]
     fn an_unmodelled_option_is_an_error_rather_than_a_silent_no_op() {
         let mut o = Options::default();
