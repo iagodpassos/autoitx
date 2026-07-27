@@ -272,8 +272,39 @@ impl AutoIt {
     }
 
     /// The window's title.
+    ///
+    /// # An empty string is ambiguous
+    ///
+    /// AutoItX reports **nothing** here: a window that does not exist and a
+    /// window with no title both yield `""` with a clear error flag, and there
+    /// is no way to tell them apart. Measured, not assumed — and worth knowing,
+    /// because the obvious reading of `Ok("")` is "found it, no title".
+    ///
+    /// Use [`win_exists`](Self::win_exists) first when the difference matters.
     pub fn win_get_title(&self, s: &Selector) -> Result<String> {
         self.inner.win_get_title(s)
+    }
+
+    /// The text AutoIt can read from inside the window.
+    ///
+    /// Carries the same ambiguity as [`win_get_title`](Self::win_get_title):
+    /// an empty result may mean the window is missing.
+    ///
+    /// Note this returns what the window's *controls* report, not what is drawn
+    /// — for a modern application it is often internal scaffolding rather than
+    /// anything a person would recognise.
+    pub fn win_get_text(&self, s: &Selector) -> Result<String> {
+        self.inner.win_get_text(s)
+    }
+
+    /// The window class names, one per control.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::WindowNotFound`] if nothing matches. Unlike its neighbours,
+    /// this one does set AutoIt's error flag.
+    pub fn win_get_class_list(&self, s: &Selector) -> Result<Vec<String>> {
+        self.inner.win_get_class_list(s)
     }
 
     /// Closes a window if it exists, escalating to killing the process.
@@ -325,6 +356,30 @@ impl AutoIt {
     /// Terminates a process by name or pid.
     pub fn process_close(&self, name_or_pid: &str) -> Result<()> {
         self.inner.process_close(name_or_pid)
+    }
+
+    /// The id of a running process, by executable name.
+    ///
+    /// Wraps AutoIt's `ProcessExists`, which is misnamed: it returns the
+    /// process id rather than a boolean. `None` means no such process.
+    pub fn process_id(&self, name: &str) -> Result<Option<u32>> {
+        self.inner.process_id(name)
+    }
+
+    /// Whether a process is running, by executable name.
+    pub fn process_exists(&self, name: &str) -> Result<bool> {
+        Ok(self.process_id(name)?.is_some())
+    }
+
+    /// The colour of one screen pixel, as `0xRRGGBB`.
+    ///
+    /// # No failure signal
+    ///
+    /// A coordinate outside every display returns `0xFFFFFF` — indistinguishable
+    /// from a genuinely white pixel. AutoIt provides nothing better, so bound
+    /// your coordinates before calling if that matters.
+    pub fn pixel_get_color(&self, p: Point) -> Result<u32> {
+        self.inner.pixel_get_color(p)
     }
 
     // -- Timing ------------------------------------------------------------

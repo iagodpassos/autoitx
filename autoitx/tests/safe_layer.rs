@@ -459,6 +459,56 @@ fn close_if_exists_never_tries_to_kill_the_sentinel_pid() {
 }
 
 #[test]
+fn win_get_title_cannot_distinguish_missing_from_untitled() {
+    // Measured: AutoItX leaves the error flag clear in both cases, so this is
+    // documented behaviour rather than a wrapper that forgot to check. The test
+    // exists so the day someone "fixes" it, they see it was deliberate.
+    let h = Harness::new();
+    h.script_string("");
+    assert_eq!(h.ai.win_get_title(&Selector::active()).unwrap(), "");
+
+    h.script_string("");
+    h.script_error(0); // exactly what the DLL reports for a missing window
+    assert_eq!(h.ai.win_get_title(&Selector::active()).unwrap(), "");
+}
+
+#[test]
+fn win_get_class_list_does_report_a_missing_window() {
+    // And this one, shaped identically, *does* set the flag. The inconsistency
+    // is AutoItX's.
+    let h = Harness::new();
+    h.script_string("");
+    let err = h.ai.win_get_class_list(&Selector::active()).unwrap_err();
+    assert!(
+        matches!(err, autoitx::Error::WindowNotFound { .. }),
+        "{err:?}"
+    );
+}
+
+#[test]
+fn win_get_class_list_splits_on_newlines() {
+    let h = Harness::new();
+    h.script_string("Static\nEdit\nButton");
+    assert_eq!(
+        h.ai.win_get_class_list(&Selector::active()).unwrap(),
+        ["Static", "Edit", "Button"]
+    );
+}
+
+#[test]
+fn process_exists_actually_returns_a_process_id() {
+    // AutoIt's `ProcessExists` is misnamed: the return is the pid, not 1.
+    let h = Harness::new();
+    h.script_int(4720);
+    assert_eq!(h.ai.process_id("notepad.exe").unwrap(), Some(4720));
+    assert!(h.ai.process_exists("notepad.exe").unwrap());
+
+    h.script_int(0);
+    assert_eq!(h.ai.process_id("__nao_existe__.exe").unwrap(), None);
+    assert!(!h.ai.process_exists("__nao_existe__.exe").unwrap());
+}
+
+#[test]
 fn win_get_state_reports_through_the_error_flag() {
     // Measured: the return carries the state bits, and 0 — nothing set — is a
     // legitimate value, so only the error flag can mean "not found".

@@ -56,10 +56,26 @@ const INVALID_PID: u32 = u32::MAX;
 //                                                           sentinel is -1
 //   WinGetState             ret <bits>      err 1           error flag
 //   WinGetPos               ret 0, err 0    ret 1, err 1    error flag
+//   WinGetTitle             text, err 0     "", err 0       NONE
+//   WinGetText              text, err 0     "", err 0       NONE
+//   WinGetClassList         text, err 0     "", err 1       error flag
+//   ProcessExists           ret <pid>       ret 0           return
+//   PixelGetColor           ret <rgb>       ret 0xFFFFFF    NONE
 //
-// Note `WinGetPos`: its return is 0 on *success* and 1 on failure — inverted
-// against every other function here. Reading it as a status is not merely
-// unreliable, it is backwards.
+// Three of these deserve naming:
+//
+// `WinGetPos`'s return is 0 on *success* and 1 on failure — inverted against
+// every other function here. Reading it as a status is not merely unreliable,
+// it is backwards.
+//
+// `WinGetTitle` and `WinGetText` report **nothing**. A missing window and a
+// window with no title are both an empty string with a clear error flag, and
+// there is no way to tell them apart. `WinGetClassList`, sitting right next to
+// them and shaped identically, *does* set the flag — so the inconsistency is
+// AutoItX's, not a misreading.
+//
+// `PixelGetColor` also reports nothing: a coordinate far off-screen returns
+// 0xFFFFFF, indistinguishable from a genuinely white pixel.
 
 // ---------------------------------------------------------------------------
 // String marshalling
@@ -404,6 +420,54 @@ impl Inner {
             );
             code
         })
+    }
+
+    pub(crate) fn win_get_text(&self, s: &Selector) -> Result<String> {
+        let w = self.sel(s)?;
+        self.call_str("AU3_WinGetText", LARGE_BUF, |buf, cap| {
+            let (_, code) = au3!(
+                self,
+                AU3_WinGetText(w.as_ptr(), EMPTY_WIDE.as_ptr(), buf, cap)
+            );
+            code
+        })
+    }
+
+    pub(crate) fn win_get_class_list(&self, s: &Selector) -> Result<Vec<String>> {
+        let w = self.sel(s)?;
+        // Unlike its two neighbours, this one *does* set the error flag when
+        // nothing matched — checked separately because `call_str` deliberately
+        // ignores the flag (an empty clipboard sets it, and that is not an
+        // error).
+        let joined = self.call_str("AU3_WinGetClassList", LARGE_BUF, |buf, cap| {
+            let (_, code) = au3!(
+                self,
+                AU3_WinGetClassList(w.as_ptr(), EMPTY_WIDE.as_ptr(), buf, cap)
+            );
+            code
+        })?;
+        if joined.is_empty() {
+            return Err(Error::window_not_found(s));
+        }
+        // Newline-separated, and real windows produce a lot of them — a modern
+        // Notepad reports several hundred characters' worth.
+        Ok(joined.lines().map(str::to_owned).collect())
+    }
+
+    pub(crate) fn process_id(&self, name: &str) -> Result<Option<u32>> {
+        let w = wide(name, "process name")?;
+        // `ProcessExists` is misnamed: it returns the process id, not a
+        // boolean, and 0 for "no such process".
+        let (pid, _) = au3!(self, AU3_ProcessExists(w.as_ptr()));
+        Ok(if pid == 0 { None } else { Some(pid as u32) })
+    }
+
+    pub(crate) fn pixel_get_color(&self, p: Point) -> Result<u32> {
+        let (rgb, _) = au3!(self, AU3_PixelGetColor(p.x, p.y));
+        // No failure signal: an off-screen coordinate yields 0xFFFFFF, which is
+        // also a perfectly ordinary white pixel. Callers that care must bound
+        // their coordinates themselves.
+        Ok(rgb as u32)
     }
 
     pub(crate) fn run(&self, command: &str, working_dir: Option<&str>) -> Result<u32> {
