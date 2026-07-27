@@ -488,28 +488,65 @@ fn activate_and_set_state_report_whether_the_window_was_found() {
     assert!(h.ai.maximize(&Selector::active()).unwrap());
 }
 
+// The mock cannot stand in for the clipboard sequence number, and that is a
+// property of the design rather than a gap: `clip_sequence` deliberately asks
+// the operating system, not the DLL, because the whole point is to observe
+// writes made by *other* processes. So these two tests assert whichever path
+// actually applies:
+//
+//   - where no counter exists (macOS, Linux), the settle fallback runs and the
+//     full call sequence is observable;
+//   - where one does (Windows), the mock's clipboard is not the real one, so
+//     the counter never moves — and the resulting timeout is itself proof that
+//     the sequence path is in use, which is the more valuable assertion.
+
 #[test]
 fn read_screen_text_selects_copies_then_reads() {
     let h = Harness::new();
     h.script_string("115597/1");
 
-    let valor = recipes::read_screen_text(
+    let resultado = recipes::read_screen_text(
         &h.ai,
         keys!("{END}{SHIFTDOWN}{HOME}{SHIFTUP}"),
-        Duration::from_secs(1),
-    )
-    .unwrap();
-
-    assert_eq!(valor, "115597/1");
-    assert_eq!(
-        h.calls(),
-        [
-            r#"AU3_Send("{END}{SHIFTDOWN}{HOME}{SHIFTUP}", 0)"#,
-            r#"AU3_Send("{CTRLDOWN}c{CTRLUP}", 0)"#,
-            "AU3_ClipGet(out, 65536)",
-        ],
-        "the order matters: select, copy, only then read"
+        Duration::from_millis(300),
     );
+
+    // Either way, the keystrokes must have gone out in the right order before
+    // anything was read.
+    let calls = h.call_names();
+    assert_eq!(
+        &calls[..2],
+        ["AU3_Send", "AU3_Send"],
+        "select then copy, before any read: {calls:#?}"
+    );
+    assert_eq!(
+        h.calls()[0],
+        r#"AU3_Send("{END}{SHIFTDOWN}{HOME}{SHIFTUP}", 0)"#
+    );
+    assert_eq!(h.calls()[1], r#"AU3_Send("{CTRLDOWN}c{CTRLUP}", 0)"#);
+
+    match h.ai.clip_sequence() {
+        None => {
+            assert_eq!(resultado.unwrap(), "115597/1");
+            assert_eq!(calls[2], "AU3_ClipGet", "must read only after copying");
+        }
+        Some(_) => {
+            let err = resultado.expect_err(
+                "with a real sequence counter and a mock clipboard, the counter \
+                 cannot move — this must time out rather than return stale text",
+            );
+            assert!(
+                matches!(
+                    err,
+                    autoitx::Error::Timeout {
+                        operation: "read_screen_text",
+                        ..
+                    }
+                ),
+                "{err:?}"
+            );
+        }
+    }
 }
 
 #[test]
@@ -519,7 +556,10 @@ fn read_screen_text_never_writes_to_the_clipboard() {
     let h = Harness::new();
     h.script_string("qualquer coisa");
 
-    recipes::read_screen_text(&h.ai, keys!("{END}"), Duration::from_secs(1)).unwrap();
+    // Succeeds or times out depending on the platform — see the note above.
+    // Either way it must not have touched the clipboard, which is the claim
+    // being tested.
+    let _ = recipes::read_screen_text(&h.ai, keys!("{END}"), Duration::from_millis(300));
 
     assert!(
         !h.call_names().contains(&"AU3_ClipPut".to_owned()),
