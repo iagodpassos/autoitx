@@ -942,7 +942,7 @@ mod live {
         let text = text_of(w);
         println!(
             "first 200 chars of text: {:?}",
-            &text.chars().take(200).collect::<String>()
+            text.chars().take(200).collect::<String>()
         );
     }
 
