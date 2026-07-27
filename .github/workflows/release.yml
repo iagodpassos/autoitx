@@ -1,0 +1,85 @@
+name: Release
+
+# Fires on a version tag. GitHub attaches the source archives to every release
+# by itself; what this adds is a prebuilt `diagnose`, so someone hitting "the
+# DLL was not found" or "every window has vanished" can get an answer without
+# installing a Rust toolchain first.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing tag to build and attach binaries to"
+        required: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+permissions:
+  contents: write
+
+jobs:
+  diagnose:
+    name: diagnose (${{ matrix.target }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: windows-latest, target: x86_64-pc-windows-msvc, ext: ".exe" }
+          - { os: macos-14, target: aarch64-apple-darwin, ext: "" }
+          - { os: macos-14, target: x86_64-apple-darwin, ext: "" }
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build
+        run: cargo build --release --target ${{ matrix.target }} --example diagnose
+
+      # macOS ties privacy grants to a binary's code signature as well as its
+      # path, and an unsigned download has neither. Ad-hoc signing gives it a
+      # stable identity, so a grant survives being moved rather than having to
+      # be re-approved every run.
+      - name: Sign (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          codesign -s - --force \
+            target/${{ matrix.target }}/release/examples/diagnose
+
+      - name: Stage
+        shell: bash
+        run: |
+          mkdir -p dist
+          cp "target/${{ matrix.target }}/release/examples/diagnose${{ matrix.ext }}" \
+             "dist/autoitx-diagnose-${{ matrix.target }}${{ matrix.ext }}"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: diagnose-${{ matrix.target }}
+          path: dist/*
+
+  attach:
+    name: Attach to the release
+    needs: diagnose
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Checksums
+        working-directory: dist
+        run: sha256sum * > SHA256SUMS.txt
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.inputs.tag || github.ref_name }}
+          files: dist/*
+          fail_on_unmatched_files: true

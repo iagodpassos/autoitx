@@ -13,10 +13,45 @@ windows, processes. The API is modeled on [AutoItX], so existing AutoIt
 automation ports over almost mechanically — but unlike AutoItX, it also runs
 natively on macOS.
 
-> ⚠️ **Status: under construction.** Phase 0 of 6. The API is not yet usable.
-> See [the roadmap](#roadmap).
+```toml
+[dependencies]
+autoitx = "0.1"
+```
+
+📦 [crates.io](https://crates.io/crates/autoitx) · 📖 [API documentation](https://docs.rs/autoitx) · ☕ [Buy me a coffee](https://buymeacoffee.com/iagodpassos)
 
 [AutoItX]: https://www.autoitscript.com/site/autoit/
+
+## Quickstart
+
+```rust,ignore
+use autoitx::{AutoIt, Keys, Selector, keys, recipes};
+use std::time::Duration;
+
+let ai = AutoIt::new()?;
+let orders = Selector::from("[CLASS:Chrome_WidgetWin_1;TITLE:Acme ERP]");
+
+// Wait for the window, bring it forward, and fill the screen.
+recipes::open_and_focus(&ai, &orders, Duration::from_secs(30))?;
+ai.maximize(&orders)?;
+
+// Type data. `Keys::text` escapes, so a customer name containing `{`
+// is typed rather than executed as a key command.
+ai.send(Keys::text(&customer.name))?;
+ai.send(keys!("{TAB}"))?;
+
+// Read a field back, waiting on the OS clipboard counter rather than
+// on a sentinel that a real value could collide with.
+let total = recipes::read_screen_text(
+    &ai,
+    keys!("{END}{SHIFTDOWN}{HOME}{SHIFTUP}"),
+    Duration::from_secs(5),
+)?;
+```
+
+That compiles unchanged on macOS. What differs — a Win32 class has no macOS
+counterpart — is handled by [`SelectorSet`](#platform-support), not by
+`#[cfg]` in your logic.
 
 ## Platform support
 
@@ -132,18 +167,81 @@ just test-mock   # exercises the AU3 FFI layer against a mock DLL, on macOS
 A real `.exe` needs `brew install mingw-w64` (or `cargo-xwin` for the MSVC ABI).
 A Windows machine is needed only to observe real behaviour — never to compile.
 
-## Roadmap
+## Examples
 
-| Phase | | |
-|---|---|---|
-| 0 | Workspace, CI, cross-compilation proven | ✅ |
-| 1 | `autoitx-sys` — all 117 `AU3_*` bindings + mock DLL | ✅ |
-| 2 | Windows safe layer: `Selector`, `Keys`, `Session`, `recipes` | ✅ |
-| 3 | Windows: remaining core + `ext::windows` | ✅ |
-| 4 | macOS: permissions, clipboard, mouse, keyboard | ✅ |
-| 5 | macOS: windows via Accessibility | ✅ |
-| 6 | `0.1.0` release | |
-| — | Native Windows backend (drops the DLL), then Linux | |
+Eight, in [`autoitx/examples`](autoitx/examples). Run any with
+`cargo run --example <name>`.
+
+| | |
+|---|---|
+| [`diagnose`](autoitx/examples/diagnose.rs) | **Run this first when something is wrong.** The DLL search order with a mark against each candidate; on macOS, which privacy grants this exact binary holds. Also published as a prebuilt binary on each [release](https://github.com/iagodpassos/autoitx/releases). |
+| [`list_windows`](autoitx/examples/list_windows.rs) | What is on screen, so you can write a selector that matches it |
+| [`type_safely`](autoitx/examples/type_safely.rs) | The four ways to build a key sequence, and when each is right |
+| [`read_field`](autoitx/examples/read_field.rs) | Reading a field through the clipboard without the race |
+| [`anchored_click`](autoitx/examples/anchored_click.rs) | Clicking without pinning the screen resolution |
+| [`wait_until_ready`](autoitx/examples/wait_until_ready.rs) | One intent, two mechanisms, one call |
+| [`portable_selectors`](autoitx/examples/portable_selectors.rs) | One selector table for both platforms |
+| [`port_from_csharp`](autoitx/examples/port_from_csharp.rs) | The same flow in AutoItX.Dotnet and here, side by side |
+
+## Status
+
+`0.1.0` — Windows complete, macOS complete for everything with a public API.
+The [platform matrix](#platform-support) is the honest statement of what works
+where; nothing in it is aspirational.
+
+Verified against reality rather than only against tests: the Windows backend
+was audited by calling every function against a live desktop and recording what
+it actually returns on failure (that table is at the top of `backend/dll.rs`,
+because the information exists nowhere else), and a full automation flow was
+run on a Windows VM. The macOS backend has a live suite that drives real
+applications, which is where four bugs a mock could never have caught turned
+up — see the [0.1.0 release notes](https://github.com/iagodpassos/autoitx/releases/tag/v0.1.0).
+
+**Next:** a native Windows backend behind the same API, which drops the DLL
+dependency entirely. Then Linux (X11 and AT-SPI), then capture and OCR.
+
+## FAQ
+
+**Do I need AutoIt installed?**
+On Windows, you need `AutoItX3_x64.dll` — it ships with AutoIt and with the
+standalone AutoItX download. It is *not* redistributed here: AutoIt is freeware
+under a EULA, not an open-source licence, so shipping it inside a crate would
+be a licensing problem rather than a convenience. On macOS nothing is needed;
+the backend is native.
+
+**Is this affiliated with AutoIt?**
+No. AutoIt and AutoItX are products of AutoIt Consulting Ltd. This project is
+independent and unendorsed — see `NOTICE`.
+
+**Why is my macOS build not finding any windows?**
+Almost always the Accessibility grant. Without it, every accessibility call
+fails in a way indistinguishable from "no such window". Run
+`cargo run --example diagnose`.
+
+**Why does macOS keep re-asking for permission?**
+Grants are keyed to a binary's path *and* code signature, and every
+`cargo build` writes a new binary. Grant the permission to your terminal or
+IDE, which children inherit, or ad-hoc sign with `codesign -s - --force`.
+
+**Can I run this on Windows ARM?**
+Yes, as an x86-64 binary under emulation — confirmed with a full flow on an
+ARM64 Windows 11 VM. A native `aarch64-pc-windows-msvc` build cannot work,
+because an ARM64 process cannot load an x64 DLL, and `Au3::load` says so
+specifically.
+
+**Does it work on Linux?**
+Not yet. X11 via `x11rb` and AT-SPI via `zbus` are the plan.
+
+**Why `Keys::text` instead of just passing a string?**
+Because `Send` interprets `{}!+^#`. A price, a name, or a password containing
+one of those becomes a key command. `Keys::text` escapes; `keys!` validates at
+compile time; `Keys::raw_unchecked` exists but has to be named.
+
+**Is it thread-safe?**
+`AutoIt` is `Send + Sync + Clone`, and every call takes a lock. That is not
+enough on its own — two flows alternating activate-then-send still fight over
+focus — so `ai.session()` holds the lock across a run of calls and forwards the
+whole API by `Deref`.
 
 ## Support
 
