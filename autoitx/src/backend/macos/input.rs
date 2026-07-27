@@ -5,8 +5,8 @@
 //! **Characters are typed as Unicode, not as key codes.** A key code names a
 //! physical position, so typing "ç" that way needs a per-layout table and is
 //! still wrong on the next layout. `CGEventKeyboardSetUnicodeString` puts the
-//! character itself on the event, and "Order Entry" arrives intact
-//! whatever the keyboard is set to. Named keys — Tab, F6 — still go by code,
+//! character itself on the event, so "Ünïcödé ãõç" arrives intact whatever
+//! the keyboard is set to. Named keys — Tab, F6 — still go by code,
 //! because those *are* positions.
 //!
 //! **Modifiers are posted as real key events, not just flags.**
@@ -519,7 +519,7 @@ mod tests {
     #[test]
     #[ignore = "types into the focused application"]
     fn accented_text_types_into_the_focused_app() {
-        let text = "Ünïcödé ãõç — 1.234,56 ção ãõç";
+        let text = "Ünïcödé ãõç — 1.234,56";
         println!("typing into the focused app in 3s: {text}");
         std::thread::sleep(Duration::from_secs(3));
         send(&keys::Keys::text(text), &Options::default()).unwrap();

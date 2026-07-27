@@ -133,8 +133,8 @@ impl Selector {
     /// A bare title, matched per the current title-match mode (prefix, by
     /// default).
     ///
-    /// This is the form the .NET code uses for ERP dialogs — `"Order Entry de
-    /// Pedidos"`, `"Confirm Delete"` — and it relies on prefix matching.
+    /// This is the form hand-written automation reaches for — `"Order Entry"`,
+    /// `"Confirm Delete"` — and it relies on prefix matching without saying so.
     #[must_use]
     pub fn title(t: impl Into<String>) -> Self {
         Self(Kind::BareTitle(t.into()))

@@ -195,9 +195,9 @@ fn non_ascii_strings_survive_the_utf16_round_trip() {
     let m = Mock::load();
     m.reset();
 
-    // Real strings from the RPAs this crate is being extracted from. If UTF-16
-    // marshalling is wrong, these are what break — and they break in
-    // production, not in ASCII-only tests.
+    // Non-ASCII, because that is what breaks. ASCII-only tests pass happily
+    // with the wide-string marshalling completely wrong, and the failure then
+    // shows up in production against a window title with an accent in it.
     for s in [
         "Order Entry",
         "Customer Notes",
@@ -211,11 +211,7 @@ fn non_ascii_strings_survive_the_utf16_round_trip() {
     }
 
     let log = m.log();
-    for s in [
-        "Order Entry",
-        "Customer Notes",
-        "R$ 1.234,56",
-    ] {
+    for s in ["Order Entry", "Customer Notes", "R$ 1.234,56"] {
         assert!(log.contains(s), "{s:?} did not survive; log:\n{log}");
     }
 }

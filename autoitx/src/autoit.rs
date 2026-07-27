@@ -31,10 +31,10 @@ use std::time::{Duration, Instant};
 /// use std::time::Duration;
 ///
 /// let ai = AutoIt::new()?;
-/// let nfe = Selector::from("[CLASS:Chrome_WidgetWin_1;TITLE:Acme Invoices]");
+/// let invoices = Selector::from("[CLASS:Chrome_WidgetWin_1;TITLE:Acme Invoices]");
 ///
-/// ai.win_wait_activate(&nfe, Some(Duration::from_secs(30)))?;
-/// ai.maximize(&nfe)?;
+/// ai.win_wait_activate(&invoices, Some(Duration::from_secs(30)))?;
+/// ai.maximize(&invoices)?;
 /// ai.send(keys!("{CTRLDOWN}{SHIFTDOWN}j{SHIFTUP}{CTRLUP}"))?;
 /// # Ok::<(), autoitx::Error>(())
 /// ```

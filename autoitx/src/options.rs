@@ -4,8 +4,8 @@
 //! in 8,000 lines. It does not have to: `AU3_Init` installs a default table,
 //! and every one of those defaults is load-bearing. Two in particular:
 //!
-//! - [`TitleMatchMode::StartsWith`] means `Selector::title("Order Entry de
-//!   Pedidos")` also matches `"Order Entry - Filter"`. Automation
+//! - [`TitleMatchMode::StartsWith`] means `Selector::title("Order
+//!   Entry")` also matches `"Order Entry - Filter"`. Automation
 //!   written against it *depends* on prefix matching without saying so.
 //! - [`CoordMode::Screen`] means every mouse coordinate is an absolute screen
 //!   pixel, which is why that code also hard-codes a 1600×900 resolution check

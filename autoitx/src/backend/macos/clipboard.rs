@@ -98,13 +98,7 @@ mod tests {
     #[test]
     fn text_round_trips_including_non_ascii() {
         let _p = Preserve::new();
-        for s in [
-            "",
-            "plain",
-            "Ünïcödé ãõç — 1.234,56",
-            "ção ãõç",
-            "多字节",
-        ] {
+        for s in ["", "plain", "Ünïcödé ãõç — 1.234,56", "ção ãõç", "多字节"] {
             put(s).unwrap();
             assert_eq!(get().unwrap(), s, "round trip failed for {s:?}");
         }

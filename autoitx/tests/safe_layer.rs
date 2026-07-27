@@ -58,11 +58,7 @@ fn send_never_uses_raw_mode() {
 fn non_ascii_survives_the_whole_stack() {
     let h = Harness::new();
     h.ai.send_text("Ünïcödé ãõç — 1.234,56").unwrap();
-    assert!(
-        h.log().contains("Ünïcödé ãõç — 1.234,56"),
-        "{}",
-        h.log()
-    );
+    assert!(h.log().contains("Ünïcödé ãõç — 1.234,56"), "{}", h.log());
 }
 
 // ---------------------------------------------------------------------------
@@ -86,8 +82,7 @@ fn a_bare_title_is_sent_as_a_bare_title() {
     // It must NOT become `[TITLE:...]`: a bare title uses WinTitleMatchMode
     // (prefix by default), and advanced syntax does not.
     let h = Harness::new();
-    h.ai.win_exists(&Selector::title("Order Entry"))
-        .unwrap();
+    h.ai.win_exists(&Selector::title("Order Entry")).unwrap();
     assert_eq!(h.log(), r#"AU3_WinExists("Order Entry", "")"#);
 }
 
