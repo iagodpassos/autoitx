@@ -22,7 +22,7 @@ default:
 # that then fails on push — which is exactly what it happened to do.
 export RUSTFLAGS := "-D warnings"
 
-check-all: fmt-check msrv
+check-all: fmt-check msrv links
     cargo clippy --workspace --all-targets -- -D warnings
     cargo clippy --workspace --all-targets --all-features -- -D warnings
     cargo clippy --target {{WIN}} -p autoitx-sys -p autoitx --all-features -- -D warnings
@@ -37,6 +37,17 @@ check-all: fmt-check msrv
 #   rustup toolchain install {{MSRV}} --profile minimal
 msrv:
     cargo +{{MSRV}} check --workspace --all-features
+
+# The README is rendered by crates.io, not served from the repo, and crates.io
+# rewrites relative links against a base that is wrong here — 0.1.0 shipped
+# with ten dead links that were all fine on GitHub. Offline and instant.
+links:
+    ./scripts/check-readme-links.py
+
+# Also fetch every outbound URL. Not in `check-all` or CI: it fails whenever
+# someone else's server is down, and a lint that does that gets ignored.
+links-network:
+    ./scripts/check-readme-links.py --network
 
 fmt:
     cargo fmt --all

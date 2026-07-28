@@ -3,8 +3,8 @@
 [![CI](https://github.com/iagodpassos/autoitx/actions/workflows/ci.yml/badge.svg)](https://github.com/iagodpassos/autoitx/actions/workflows/ci.yml)
 [![crates.io](https://img.shields.io/crates/v/autoitx.svg)](https://crates.io/crates/autoitx)
 [![docs.rs](https://img.shields.io/docsrs/autoitx)](https://docs.rs/autoitx)
-[![MSRV](https://img.shields.io/badge/MSRV-1.85-blue)](https://blog.rust-lang.org/)
-[![License](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue)](#license)
+[![MSRV](https://img.shields.io/badge/MSRV-1.85-blue)](https://blog.rust-lang.org/2025/02/20/Rust-1.85.0/)
+[![License](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue)](#user-content-license)
 
 **AutoItX's API, in Rust, on Windows *and* macOS.**
 
@@ -50,7 +50,7 @@ let total = recipes::read_screen_text(
 ```
 
 That compiles unchanged on macOS. What differs — a Win32 class has no macOS
-counterpart — is handled by [`SelectorSet`](#platform-support), not by
+counterpart — is handled by [`SelectorSet`](#user-content-platform-support), not by
 `#[cfg]` in your logic.
 
 ## Platform support
@@ -117,7 +117,7 @@ OS clipboard *sequence number* instead, which cannot race.
 
 ### Windows
 
-`autoitx` does not ship the AutoItX DLL — see [NOTICE](NOTICE). Download AutoIt
+`autoitx` does not ship the AutoItX DLL — see [NOTICE][notice]. Download AutoIt
 from [autoitscript.com](https://www.autoitscript.com/site/autoit/downloads/) and
 point the library at `AutoItX3_x64.dll`, which is searched for in this order:
 
@@ -169,25 +169,35 @@ A Windows machine is needed only to observe real behaviour — never to compile.
 
 ## Examples
 
-Eight, in [`autoitx/examples`](autoitx/examples). Run any with
+Eight, in [`autoitx/examples`][examples]. Run any with
 `cargo run --example <name>`.
 
 | | |
 |---|---|
-| [`diagnose`](autoitx/examples/diagnose.rs) | **Run this first when something is wrong.** The DLL search order with a mark against each candidate; on macOS, which privacy grants this exact binary holds. Also published as a prebuilt binary on each [release](https://github.com/iagodpassos/autoitx/releases). |
-| [`list_windows`](autoitx/examples/list_windows.rs) | What is on screen, so you can write a selector that matches it |
-| [`type_safely`](autoitx/examples/type_safely.rs) | The four ways to build a key sequence, and when each is right |
-| [`read_field`](autoitx/examples/read_field.rs) | Reading a field through the clipboard without the race |
-| [`anchored_click`](autoitx/examples/anchored_click.rs) | Clicking without pinning the screen resolution |
-| [`wait_until_ready`](autoitx/examples/wait_until_ready.rs) | One intent, two mechanisms, one call |
-| [`portable_selectors`](autoitx/examples/portable_selectors.rs) | One selector table for both platforms |
-| [`port_from_csharp`](autoitx/examples/port_from_csharp.rs) | The same flow in AutoItX.Dotnet and here, side by side |
+| [`diagnose`][diagnose] | **Run this first when something is wrong.** The DLL search order with a mark against each candidate; on macOS, which privacy grants this exact binary holds. Also published as a prebuilt binary on each [release](https://github.com/iagodpassos/autoitx/releases). |
+| [`list_windows`][list_windows] | What is on screen, so you can write a selector that matches it |
+| [`type_safely`][type_safely] | The four ways to build a key sequence, and when each is right |
+| [`read_field`][read_field] | Reading a field through the clipboard without the race |
+| [`anchored_click`][anchored_click] | Clicking without pinning the screen resolution |
+| [`wait_until_ready`][wait_until_ready] | One intent, two mechanisms, one call |
+| [`portable_selectors`][portable_selectors] | One selector table for both platforms |
+| [`port_from_csharp`][port_from_csharp] | The same flow in AutoItX.Dotnet and here, side by side |
+
+[examples]: https://github.com/iagodpassos/autoitx/tree/main/autoitx/examples
+[diagnose]: https://github.com/iagodpassos/autoitx/blob/main/autoitx/examples/diagnose.rs
+[list_windows]: https://github.com/iagodpassos/autoitx/blob/main/autoitx/examples/list_windows.rs
+[type_safely]: https://github.com/iagodpassos/autoitx/blob/main/autoitx/examples/type_safely.rs
+[read_field]: https://github.com/iagodpassos/autoitx/blob/main/autoitx/examples/read_field.rs
+[anchored_click]: https://github.com/iagodpassos/autoitx/blob/main/autoitx/examples/anchored_click.rs
+[wait_until_ready]: https://github.com/iagodpassos/autoitx/blob/main/autoitx/examples/wait_until_ready.rs
+[portable_selectors]: https://github.com/iagodpassos/autoitx/blob/main/autoitx/examples/portable_selectors.rs
+[port_from_csharp]: https://github.com/iagodpassos/autoitx/blob/main/autoitx/examples/port_from_csharp.rs
 
 ## Status
 
-`0.1.0` — Windows complete, macOS complete for everything with a public API.
-The [platform matrix](#platform-support) is the honest statement of what works
-where; nothing in it is aspirational.
+`0.1.1` — Windows complete, macOS complete for everything with a public API.
+The [platform matrix](#user-content-platform-support) is the honest statement of
+what works where; nothing in it is aspirational.
 
 Verified against reality rather than only against tests: the Windows backend
 was audited by calling every function against a live desktop and recording what
@@ -253,4 +263,6 @@ MIT or Apache-2.0, at your option.
 
 AutoIt and AutoItX are products of AutoIt Consulting Ltd. **This project is not
 affiliated with, endorsed by, or sponsored by them**, and the AutoItX3 DLL is
-not distributed with it. See [NOTICE](NOTICE).
+not distributed with it. See [NOTICE][notice].
+
+[notice]: https://github.com/iagodpassos/autoitx/blob/main/NOTICE
