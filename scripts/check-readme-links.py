@@ -40,6 +40,10 @@ REPO = "https://github.com/iagodpassos/autoitx"
 BRANCH = "main"
 ROOT = Path(__file__).resolve().parent.parent
 
+# Every README that crates.io renders. Both packages carry one, and both get
+# the rewriting treatment described above.
+PUBLISHED_READMES = ["README.md", "autoitx-sys/README.md"]
+
 DEFINITION = re.compile(r"^\[([^\]]+)\]:[ \t]*(\S+)[ \t]*$", re.M)
 INLINE = re.compile(r"\]\(([^)\s]+)(?:\s+\"[^\"]*\")?\)")
 REFERENCE = re.compile(r"\]\[([^\]]+)\]")
@@ -190,23 +194,28 @@ def check_network(markdown: str) -> list[str]:
 
 
 def main() -> int:
-    paths = [a for a in sys.argv[1:] if not a.startswith("-")]
-    readme = Path(paths[0]) if paths else ROOT / "README.md"
-    markdown = readme.read_text(encoding="utf-8")
+    given = [Path(a) for a in sys.argv[1:] if not a.startswith("-")]
+    readmes = given or [ROOT / name for name in PUBLISHED_READMES]
 
-    problems = check(markdown)
-    if "--network" in sys.argv:
-        print("Checking outbound URLs...")
-        problems += check_network(markdown)
+    failed = False
+    for readme in readmes:
+        markdown = readme.read_text(encoding="utf-8")
+        label = readme.relative_to(ROOT) if readme.is_relative_to(ROOT) else readme
 
-    if problems:
-        print(f"\n{readme.name}: {len(problems)} problem(s)\n", file=sys.stderr)
-        for problem in problems:
-            print(f"  {problem}", file=sys.stderr)
-        return 1
+        problems = check(markdown)
+        if "--network" in sys.argv:
+            print(f"{label}: fetching outbound URLs...", flush=True)
+            problems += check_network(markdown)
 
-    print(f"{readme.name}: links OK")
-    return 0
+        if problems:
+            failed = True
+            print(f"\n{label}: {len(problems)} problem(s)\n", file=sys.stderr)
+            for problem in problems:
+                print(f"  {problem}", file=sys.stderr)
+        else:
+            print(f"{label}: links OK", flush=True)
+
+    return 1 if failed else 0
 
 
 if __name__ == "__main__":
