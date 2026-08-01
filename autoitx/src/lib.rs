@@ -30,7 +30,7 @@
 //!
 //! [docs.rs]: https://docs.rs/autoitx
 //!
-//! # Two things this fixes about hand-written AutoIt code
+//! # Three things this fixes about hand-written AutoIt code
 //!
 //! **Keystroke injection.** `Send` interprets `{}!+^#`, so interpolating user
 //! or database data straight into a send string lets that data execute as key
@@ -41,6 +41,12 @@
 //! sentinel on the clipboard, copy, then check whether it changed — races with
 //! anything else touching the clipboard. `recipes::read_screen_text` waits on
 //! the OS clipboard sequence number instead, which cannot race.
+//!
+//! **Racing several outcomes with no timeout.** AutoIt waits on one window at
+//! a time, so "the form closed, or an error appeared, or a block notice did"
+//! gets written as a hand-rolled polling loop that reliably forgets to give
+//! up. [`AutoIt::wait_for_any`] takes the timeout as a parameter and reports
+//! which outcome happened.
 //!
 //! # Legal
 //!
@@ -76,7 +82,7 @@ pub mod selector;
 pub mod autoit;
 
 #[cfg(any(windows, target_os = "macos", feature = "mock-loader", docsrs))]
-pub use autoit::{AutoIt, AutoItBuilder, MouseButton, Session};
+pub use autoit::{AutoIt, AutoItBuilder, MouseButton, Session, WinCondition};
 
 #[cfg(any(windows, feature = "mock-loader", docsrs))]
 pub use control::Control;

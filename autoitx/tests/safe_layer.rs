@@ -14,7 +14,7 @@
 mod common;
 
 use autoitx::options::ShowState;
-use autoitx::{Keys, Point, Selector, keys, recipes};
+use autoitx::{Keys, Point, Selector, WinCondition, keys, recipes};
 use common::Harness;
 use std::time::Duration;
 
@@ -710,4 +710,130 @@ fn a_long_title_needing_growth_still_round_trips_non_ascii() {
     let long = "Ünïcödé ãõç — ".repeat(300);
     h.script_string(&long);
     assert_eq!(h.ai.win_get_title(&Selector::active()).unwrap(), long);
+}
+
+// -- wait_for_any ----------------------------------------------------------
+//
+// The race between several possible outcomes of one action. In the .NET
+// robots this is a hand-written `while` with no timeout, so the cases that
+// matter most are the ones that version cannot express: a tie, and giving up.
+
+#[test]
+fn wait_for_any_returns_the_watch_that_fired() {
+    let h = Harness::new();
+    h.script_ints(&[0, 0, 1]); // only the third window is there
+
+    let a = Selector::from("A");
+    let b = Selector::from("B");
+    let c = Selector::from("C");
+
+    let fired =
+        h.ai.wait_for_any(
+            &[
+                (&a, WinCondition::Exists),
+                (&b, WinCondition::Exists),
+                (&c, WinCondition::Exists),
+            ],
+            Some(Duration::from_secs(1)),
+        )
+        .unwrap();
+
+    assert_eq!(fired, Some(2));
+    assert_eq!(
+        h.call_names(),
+        ["AU3_WinExists", "AU3_WinExists", "AU3_WinExists"],
+        "every watch should be evaluated within the pass"
+    );
+}
+
+#[test]
+fn wait_for_any_prefers_the_lower_index_on_a_tie() {
+    // Both hold in the same pass. Without a documented rule the answer would
+    // depend on polling luck, which is not something a caller can branch on.
+    let h = Harness::new();
+    h.script_ints(&[0, 1, 1]);
+
+    let a = Selector::from("A");
+    let b = Selector::from("B");
+    let c = Selector::from("C");
+
+    let fired =
+        h.ai.wait_for_any(
+            &[
+                (&a, WinCondition::Exists),
+                (&b, WinCondition::Exists),
+                (&c, WinCondition::Exists),
+            ],
+            Some(Duration::from_secs(1)),
+        )
+        .unwrap();
+
+    assert_eq!(fired, Some(1));
+    assert_eq!(
+        h.call_names().len(),
+        2,
+        "should stop at the first match, not finish the pass"
+    );
+}
+
+#[test]
+fn wait_for_any_reports_giving_up_as_none() {
+    let h = Harness::new();
+    h.script_int(0); // nothing ever appears
+
+    let a = Selector::from("A");
+    let started = std::time::Instant::now();
+
+    let fired =
+        h.ai.wait_for_any(
+            &[(&a, WinCondition::Exists)],
+            Some(Duration::from_millis(10)),
+        )
+        .unwrap();
+
+    assert_eq!(fired, None);
+    assert!(
+        started.elapsed() >= Duration::from_millis(10),
+        "should have waited out the timeout, not returned early"
+    );
+}
+
+#[test]
+fn wait_for_any_without_watches_returns_instead_of_hanging() {
+    // `None` means wait forever, so getting this wrong hangs the suite rather
+    // than failing it — which is exactly why the empty case is special-cased.
+    let h = Harness::new();
+
+    assert_eq!(h.ai.wait_for_any(&[], None).unwrap(), None);
+    assert!(h.call_names().is_empty(), "nothing to ask about");
+}
+
+#[test]
+fn wait_for_any_inverts_exists_for_gone() {
+    let h = Harness::new();
+    h.script_ints(&[0]); // the window is not there, so it is Gone
+
+    let a = Selector::from("A");
+    let fired =
+        h.ai.wait_for_any(&[(&a, WinCondition::Gone)], Some(Duration::from_secs(1)))
+            .unwrap();
+
+    assert_eq!(fired, Some(0));
+    assert_eq!(h.call_names(), ["AU3_WinExists"]);
+}
+
+#[test]
+fn wait_for_any_asks_about_focus_for_active() {
+    // The condition has to pick the right primitive: existing and being
+    // focused are different questions, and AutoIt answers them separately.
+    let h = Harness::new();
+    h.script_ints(&[1]);
+
+    let a = Selector::from("A");
+    let fired =
+        h.ai.wait_for_any(&[(&a, WinCondition::Active)], Some(Duration::from_secs(1)))
+            .unwrap();
+
+    assert_eq!(fired, Some(0));
+    assert_eq!(h.call_names(), ["AU3_WinActive"]);
 }

@@ -95,7 +95,7 @@ one portable call. `wait_until_idle` polls the cursor shape on Windows and
 probes the Accessibility message timeout on macOS; your code says
 `wait_until_idle`.
 
-## Two things this fixes about hand-written AutoIt code
+## Three things this fixes about hand-written AutoIt code
 
 **Keystroke injection.** `Send` interprets `{}!+^#`, so interpolating user or
 database data straight into a send string lets that data execute as key
@@ -112,6 +112,33 @@ auto.send(keys!("{CTRLDOWN}c{CTRLUP}"))?;  // validated at compile time
 value on the clipboard, send Ctrl+C, then check whether it changed — races with
 anything else touching the clipboard. `recipes::read_screen_text` waits on the
 OS clipboard *sequence number* instead, which cannot race.
+
+**Racing several outcomes with no timeout.** An action in a legacy application
+can end several ways — the form closes, or an error dialog appears, or a
+different dialog appears — and AutoIt only waits on one window at a time, so
+the race gets written by hand and reliably forgets the timeout:
+
+```csharp
+while (WinExists("Order Selection")
+    && !WinExists("[CLASS:ui60Modal_W32]")
+    && !WinExists("Blocked")) { Thread.Sleep(300); }   // hangs if none happen
+```
+
+`wait_for_any` takes the timeout as a parameter and tells you *which* outcome
+happened, so there is no version of the call that can hang.
+
+```rust,ignore
+match ai.wait_for_any(&[
+    (&orders,  WinCondition::Gone),
+    (&modal,   WinCondition::Exists),
+    (&blocked, WinCondition::Exists),
+], Some(Duration::from_secs(60)))? {
+    Some(0) => saved(),
+    Some(1) => report_error()?,
+    Some(2) => report_blocked()?,
+    _ => return Err(wedged()),
+}
+```
 
 ## Setup
 
@@ -195,7 +222,7 @@ Eight, in [`autoitx/examples`][examples]. Run any with
 
 ## Status
 
-`0.1.1` — Windows complete, macOS complete for everything with a public API.
+`0.1.2` — Windows complete, macOS complete for everything with a public API.
 The [platform matrix](#user-content-platform-support) is the honest statement of
 what works where; nothing in it is aspirational.
 

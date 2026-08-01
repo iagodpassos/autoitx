@@ -3,7 +3,7 @@ resolver = "3"
 members = ["autoitx-sys", "autoitx", "xtask-mock-dll"]
 
 [workspace.package]
-version = "0.1.1"
+version = "0.1.2"
 edition = "2024"
 rust-version = "1.85"
 license = "MIT OR Apache-2.0"
@@ -17,7 +17,7 @@ keywords = ["automation", "autoit", "rpa", "windows", "macos"]
 categories = ["api-bindings", "os", "os::windows-apis", "os::macos-apis"]
 
 [workspace.dependencies]
-autoitx-sys = { version = "0.1.1", path = "autoitx-sys" }
+autoitx-sys = { version = "0.1.2", path = "autoitx-sys" }
 
 # `libloading` 0.9 raises the MSRV to 1.88; 0.8.x stays compatible with ours.
 libloading = "0.8.9"

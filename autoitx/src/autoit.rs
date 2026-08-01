@@ -58,6 +58,24 @@ impl std::fmt::Debug for AutoIt {
     }
 }
 
+/// A window state to watch for, for [`AutoIt::wait_for_any`].
+///
+/// The four map onto AutoIt's four single-window waits — `WinWait`,
+/// `WinWaitClose`, `WinWaitActive`, `WinWaitNotActive` — so that racing them
+/// against each other needs no vocabulary the caller does not already have.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub enum WinCondition {
+    /// Some window matches the selector.
+    Exists,
+    /// No window matches the selector.
+    Gone,
+    /// The matching window is focused.
+    Active,
+    /// The matching window is not focused.
+    NotActive,
+}
+
 impl AutoIt {
     /// Loads the AutoItX3 DLL with default options.
     ///
@@ -303,6 +321,100 @@ impl AutoIt {
             self.win_activate(s)?;
         }
         self.win_wait_active(s, timeout)
+    }
+
+    /// Waits for the first of several window conditions to hold.
+    ///
+    /// Returns the index of the watch that fired, or `None` on timeout.
+    ///
+    /// An action in a legacy application rarely has one outcome. Committing a
+    /// form either closes it, or raises an error dialog, or raises a *different*
+    /// dialog that means something else entirely — and which one happens is the
+    /// only way to find out what the application did. The single-window waits
+    /// cannot express that, so automation writes the race by hand:
+    ///
+    /// ```csharp
+    /// while (WinExists("Order Selection")
+    ///     && !WinExists("[CLASS:ui60Modal_W32]")
+    ///     && !WinExists("Blocked")) { Thread.Sleep(300); }
+    /// ```
+    ///
+    /// That loop is in production twice, in two different robots, and it has no
+    /// timeout: if none of the three ever happens, the robot hangs forever. The
+    /// version here cannot, because the timeout is a parameter rather than
+    /// something you remember to add.
+    ///
+    /// ```no_run
+    /// # use autoitx::{AutoIt, Selector, WinCondition};
+    /// # use std::time::Duration;
+    /// # let ai = AutoIt::new()?;
+    /// let orders  = Selector::from("Order Selection");
+    /// let modal   = Selector::from("[CLASS:ui60Modal_W32]");
+    /// let blocked = Selector::from("Blocked");
+    ///
+    /// match ai.wait_for_any(
+    ///     &[
+    ///         (&orders,  WinCondition::Gone),   // the form closed: it saved
+    ///         (&modal,   WinCondition::Exists), // an error came up instead
+    ///         (&blocked, WinCondition::Exists), // ... or a block notice did
+    ///     ],
+    ///     Some(Duration::from_secs(60)),
+    /// )? {
+    ///     Some(0) => println!("saved"),
+    ///     Some(1) => println!("error dialog"),
+    ///     Some(2) => println!("blocked"),
+    ///     _ => println!("nothing happened in 60s — the application is wedged"),
+    /// }
+    /// # Ok::<(), autoitx::Error>(())
+    /// ```
+    ///
+    /// # Order is significant
+    ///
+    /// Watches are evaluated in slice order within each pass, so when two hold
+    /// at once the lower index wins. Put the outcome you most need to
+    /// distinguish first — the alternative is a return value that depends on
+    /// polling luck.
+    ///
+    /// # Interleaving
+    ///
+    /// The lock is released between passes, deliberately: holding it across a
+    /// minute-long wait would stall every other thread. Another thread can
+    /// therefore act between two passes. Take a [`session`](Self::session) if
+    /// the window set must not be disturbed while this runs.
+    ///
+    /// Polling runs at `WinWaitDelay` (250 ms by default), the same option that
+    /// paces the other waits. An empty slice returns `Ok(None)` at once rather
+    /// than waiting for a condition that cannot arrive.
+    pub fn wait_for_any(
+        &self,
+        watches: &[(&Selector, WinCondition)],
+        timeout: Option<Duration>,
+    ) -> Result<Option<usize>> {
+        if watches.is_empty() {
+            return Ok(None);
+        }
+
+        let poll = self.options().win_wait_delay;
+        let start = Instant::now();
+        loop {
+            for (index, (selector, condition)) in watches.iter().enumerate() {
+                let held = match condition {
+                    WinCondition::Exists => self.win_exists(selector)?,
+                    WinCondition::Gone => !self.win_exists(selector)?,
+                    WinCondition::Active => self.win_active(selector)?,
+                    WinCondition::NotActive => !self.win_active(selector)?,
+                };
+                if held {
+                    return Ok(Some(index));
+                }
+            }
+            // Checked after a full pass, so every watch is evaluated at least
+            // once even with a zero timeout.
+            if timeout.is_some_and(|limit| start.elapsed() >= limit) {
+                return Ok(None);
+            }
+            self.sleep(poll);
+        }
     }
 
     /// Asks a window to close.
