@@ -33,20 +33,20 @@ fn compiled_port() -> Result<(), autoitx::Error> {
         let window = Selector::from("[TITLE:Order Selection]");
         let customer_name = "Ada {priority}+";
 
-        // 1. Dynamic text is data, not an AutoIt key sequence.
-        ai.send(Keys::text(customer_name))?;
+        // 1. Unlike AutoIt's unbounded WinWaitActive call, the timeout is explicit.
+        let active = ai.win_wait_active(&window, Some(Duration::from_secs(10)))?;
+        println!("order selection active: {active}");
 
         // 2. The shortcut is a literal sequence validated at compile time.
         let copied =
             recipes::read_screen_text(&ai, keys!("{CTRLDOWN}c{CTRLUP}"), Duration::from_secs(5))?;
         println!("copied total: {copied}");
 
-        // 3. This offset follows the selected window rather than the screen.
-        recipes::click_in_window(&ai, &window, 420, 260)?;
+        // 3. Dynamic text is data, not an AutoIt key sequence.
+        ai.send(Keys::text(customer_name))?;
 
-        // 4. Unlike AutoIt's unbounded WinWaitActive call, the timeout is explicit.
-        let active = ai.win_wait_active(&window, Some(Duration::from_secs(10)))?;
-        println!("order selection active: {active}");
+        // 4. This offset follows the selected window rather than the screen.
+        recipes::click_in_window(&ai, &window, 420, 260)?;
     }
     Ok(())
 }
