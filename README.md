@@ -196,7 +196,7 @@ A Windows machine is needed only to observe real behaviour — never to compile.
 
 ## Examples
 
-Eight, in [`autoitx/examples`][examples]. Run any with
+Nine, in [`autoitx/examples`][examples]. Run any with
 `cargo run --example <name>`.
 
 | | |
@@ -209,6 +209,7 @@ Eight, in [`autoitx/examples`][examples]. Run any with
 | [`wait_until_ready`][wait_until_ready] | One intent, two mechanisms, one call |
 | [`portable_selectors`][portable_selectors] | One selector table for both platforms |
 | [`port_from_csharp`][port_from_csharp] | The same flow in AutoItX.Dotnet and here, side by side |
+| [`port_from_autoit`][port_from_autoit] | An AutoIt flow and its safe, compiled Rust port, side by side |
 
 [examples]: https://github.com/iagodpassos/autoitx/tree/main/autoitx/examples
 [diagnose]: https://github.com/iagodpassos/autoitx/blob/main/autoitx/examples/diagnose.rs
@@ -219,6 +220,7 @@ Eight, in [`autoitx/examples`][examples]. Run any with
 [wait_until_ready]: https://github.com/iagodpassos/autoitx/blob/main/autoitx/examples/wait_until_ready.rs
 [portable_selectors]: https://github.com/iagodpassos/autoitx/blob/main/autoitx/examples/portable_selectors.rs
 [port_from_csharp]: https://github.com/iagodpassos/autoitx/blob/main/autoitx/examples/port_from_csharp.rs
+[port_from_autoit]: https://github.com/iagodpassos/autoitx/blob/main/autoitx/examples/port_from_autoit.rs
 
 ## Status
 
